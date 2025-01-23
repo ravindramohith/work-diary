@@ -11,8 +11,11 @@ from .auth import (
 )
 from .security import encrypt_token
 from .models import UserCreate, UserDB, Token
-import asyncpg, os
+import asyncpg, os, secrets
 from .services.slack import generate_slack_nudge
+from slack_sdk import WebClient
+from slack_sdk.oauth import AuthorizeUrlGenerator
+from fastapi.responses import RedirectResponse, HTMLResponse
 
 app = FastAPI()
 
@@ -20,8 +23,10 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -75,7 +80,25 @@ async def login_for_access_token(
     access_token = create_access_token(
         data={"sub": user["email"]}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+
+    # Get complete user info including slack details
+    complete_user = await db.fetchrow(
+        """
+        SELECT id, email, slack_user_id, slack_team_id 
+        FROM users WHERE email = $1
+        """,
+        user["email"],
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "email": complete_user["email"],
+            "slack_user_id": complete_user["slack_user_id"],
+            "slack_team_id": complete_user["slack_team_id"],
+        },
+    }
 
 
 @router.get("/users/me", response_model=UserDB)
@@ -83,65 +106,88 @@ async def read_users_me(current_user: UserDB = Depends(get_current_user)):
     return current_user
 
 
-app.include_router(router)
-
-from slack_sdk import WebClient
-from slack_sdk.oauth import AuthorizeUrlGenerator
-from fastapi.responses import RedirectResponse
-
 # Initialize Slack client
 slack_client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
 
-@router.get("/slack/install")
-async def slack_install():
-    authorize_url = AuthorizeUrlGenerator(
-        client_id=os.getenv("SLACK_CLIENT_ID"),
-        scopes=["users:read", "channels:history", "chat:write"],
-    ).generate()
-    return RedirectResponse(authorize_url)
+# Slack OAuth endpoints
+SLACK_REDIRECT_URI = "https://0.0.0.0:8000/slack-callback"
+FRONTEND_SUCCESS_URI = "http://localhost:3000/dashboard"
 
 
-@router.get("/slack/callback")
+@router.get("/connect-slack")
+async def connect_slack():
+    # Generate a random state
+    state = secrets.token_urlsafe(16)
+
+    auth_url = (
+        f"https://slack.com/oauth/v2/authorize?"
+        f"client_id={os.getenv('SLACK_CLIENT_ID')}&"
+        f"scope=channels:history,chat:write&"
+        f"user_scope=channels:history,chat:write&"
+        f"redirect_uri={SLACK_REDIRECT_URI}&"
+        f"state={state}"
+    )
+    # print(f"Starting Slack OAuth flow with state: {state}")
+    # print(f"Generated Slack auth URL: {auth_url}")
+    return RedirectResponse(auth_url)
+
+
+@router.get("/slack-callback")
 async def slack_callback(
-    code: str,
-    state: str = None,  # Optional: Pass user ID in state param
+    code: str | None = None,
+    error: str | None = None,
+    state: str | None = None,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    # Exchange code for token
-    oauth_response = slack_client.oauth_v2_access(
-        client_id=os.getenv("SLACK_CLIENT_ID"),
-        client_secret=os.getenv("SLACK_CLIENT_SECRET"),
-        code=code,
-    )
+    # Log all request parameters
+    # print("Received callback with:")
+    # print(f"code: {code}")
+    # print(f"error: {error}")
+    # print(f"state: {state}")
 
-    # Get Slack user email
-    user_info = slack_client.users_info(user=oauth_response["authed_user"]["id"])
-    slack_email = user_info["user"]["profile"]["email"]
+    if error:
+        print(f"Error from Slack: {error}")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error={error}")
 
-    # Link to existing user (assuming they're logged in via JWT)
-    # OR create new user if not exists (depends on your auth flow)
-    user = await db.fetchrow("SELECT * FROM users WHERE email = $1", slack_email)
-    if not user:
-        raise HTTPException(404, "User not found")
+    if not code:
+        print("No code received from Slack")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=no_code")
 
-    # Store encrypted token
-    await db.execute(
-        """
-        UPDATE users 
-        SET 
-            slack_user_id = $1,
-            slack_access_token = $2,
-            slack_team_id = $3
-        WHERE id = $4
-        """,
-        oauth_response["authed_user"]["id"],
-        encrypt_token(oauth_response["authed_user"]["access_token"]),
-        oauth_response["team"]["id"],
-        user["id"],
-    )
+    try:
+        # Exchange code for token
+        oauth_response = slack_client.oauth_v2_access(
+            client_id=os.getenv("SLACK_CLIENT_ID"),
+            client_secret=os.getenv("SLACK_CLIENT_SECRET"),
+            code=code,
+            redirect_uri=SLACK_REDIRECT_URI,
+        )
+        print(f"oauth_response: {oauth_response}")
 
-    return {"status": "Slack connected!"}
+        # Get Slack user info
+        user_info = slack_client.users_info(user=oauth_response["authed_user"]["id"])
+        slack_email = user_info["user"]["profile"]["email"]
+
+        # Update user with Slack details
+        await db.execute(
+            """
+            UPDATE users 
+            SET 
+                slack_user_id = $1,
+                slack_access_token = $2,
+                slack_team_id = $3
+            WHERE email = $4
+            """,
+            oauth_response["authed_user"]["id"],
+            encrypt_token(oauth_response["authed_user"]["access_token"]),
+            oauth_response["team"]["id"],
+            slack_email,
+        )
+
+        return RedirectResponse(FRONTEND_SUCCESS_URI)
+    except Exception as e:
+        print(f"Error during OAuth: {str(e)}")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error={str(e)}")
 
 
 @router.post("/slack/send-nudge")
@@ -153,3 +199,18 @@ async def send_slack_nudge(
     nudge = await generate_slack_nudge(current_user.id, db)
     slack_client.chat_postMessage(channel=current_user.slack_user_id, text=nudge)
     return {"status": "Nudge sent!"}
+
+
+app.include_router(router)
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        ssl_keyfile="certs/key.pem",
+        ssl_certfile="certs/cert.pem",
+        reload=True,
+    )

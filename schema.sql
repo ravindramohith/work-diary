@@ -2,6 +2,7 @@
 DROP TABLE IF EXISTS burnout_scores;
 DROP TABLE IF EXISTS activity_logs;
 DROP TABLE IF EXISTS slack_activity;
+DROP TABLE IF EXISTS slack_oauth_states;
 DROP TABLE IF EXISTS users;
 
 
@@ -14,6 +15,14 @@ CREATE TABLE IF NOT EXISTS users (
     slack_user_id TEXT UNIQUE,
     slack_access_token BYTEA,  -- Encrypted storage
     slack_team_id TEXT
+);
+
+-- Slack OAuth States
+CREATE TABLE IF NOT EXISTS slack_oauth_states (
+    id SERIAL PRIMARY KEY,
+    state TEXT UNIQUE NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Activity Logs (Slack/Jira/GitHub data)

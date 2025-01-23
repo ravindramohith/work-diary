@@ -1,9 +1,6 @@
 from cryptography.fernet import Fernet
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
-fernet = Fernet(os.getenv("ENCRYPTION_KEY"))
+fernet = Fernet(Fernet.generate_key())
 
 
 def encrypt_token(token: str) -> bytes:

@@ -2,9 +2,16 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime
 
 
+class UserResponse(BaseModel):
+    email: EmailStr
+    slack_user_id: str | None = None
+    slack_team_id: str | None = None
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+    user: UserResponse
 
 
 class TokenData(BaseModel):
@@ -22,6 +29,7 @@ class UserDB(BaseModel):
     hashed_password: str
     disabled: bool
     created_at: datetime
+    slack_user_id: str | None = None
 
     class Config:
         orm_mode = True
