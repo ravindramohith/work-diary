@@ -115,6 +115,34 @@ SLACK_REDIRECT_URI = "https://0.0.0.0:8000/slack-callback"
 FRONTEND_SUCCESS_URI = "http://localhost:3000/dashboard"
 
 
+# Define all required Slack scopes
+SLACK_BOT_SCOPES = [
+    "channels:history",
+    "chat:write",
+    "channels:read",
+    "groups:read",
+    "mpim:read",
+    "im:read",
+    "users:read",
+    "users:read.email",
+    "team:read",
+    "im:history",
+]
+
+SLACK_USER_SCOPES = [
+    "channels:history",
+    "chat:write",
+    "channels:read",
+    "groups:read",
+    "mpim:read",
+    "im:read",
+    "users:read",
+    "im:history",
+    "mpim:history",
+    "groups:history",
+]
+
+
 @router.get("/connect-slack")
 async def connect_slack():
     # Generate a random state
@@ -123,13 +151,11 @@ async def connect_slack():
     auth_url = (
         f"https://slack.com/oauth/v2/authorize?"
         f"client_id={os.getenv('SLACK_CLIENT_ID')}&"
-        f"scope=channels:history,chat:write&"
-        f"user_scope=channels:history,chat:write&"
+        f"scope={','.join(SLACK_BOT_SCOPES)}&"
+        f"user_scope={','.join(SLACK_USER_SCOPES)}&"
         f"redirect_uri={SLACK_REDIRECT_URI}&"
         f"state={state}"
     )
-    # print(f"Starting Slack OAuth flow with state: {state}")
-    # print(f"Generated Slack auth URL: {auth_url}")
     return RedirectResponse(auth_url)
 
 
@@ -140,12 +166,6 @@ async def slack_callback(
     state: str | None = None,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    # Log all request parameters
-    # print("Received callback with:")
-    # print(f"code: {code}")
-    # print(f"error: {error}")
-    # print(f"state: {state}")
-
     if error:
         print(f"Error from Slack: {error}")
         return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error={error}")
@@ -162,24 +182,26 @@ async def slack_callback(
             code=code,
             redirect_uri=SLACK_REDIRECT_URI,
         )
-        print(f"oauth_response: {oauth_response}")
 
         # Get Slack user info
         user_info = slack_client.users_info(user=oauth_response["authed_user"]["id"])
         slack_email = user_info["user"]["profile"]["email"]
+        print(f"oauth_response: {oauth_response}")
 
-        # Update user with Slack details
+        # Store both bot token and user token
         await db.execute(
             """
             UPDATE users 
             SET 
                 slack_user_id = $1,
                 slack_access_token = $2,
-                slack_team_id = $3
-            WHERE email = $4
+                slack_bot_token = $3,
+                slack_team_id = $4
+            WHERE email = $5
             """,
             oauth_response["authed_user"]["id"],
             encrypt_token(oauth_response["authed_user"]["access_token"]),
+            encrypt_token(oauth_response["access_token"]),
             oauth_response["team"]["id"],
             slack_email,
         )
@@ -195,10 +217,14 @@ async def send_slack_nudge(
     current_user: UserDB = Depends(get_current_user),
     db: asyncpg.Connection = Depends(get_db),
 ):
-    # Generate and send message
-    nudge = await generate_slack_nudge(current_user.id, db)
-    slack_client.chat_postMessage(channel=current_user.slack_user_id, text=nudge)
-    return {"status": "Nudge sent!"}
+    try:
+        # Generate and send message
+        nudge = await generate_slack_nudge(current_user.id, db)
+        slack_client.chat_postMessage(channel=current_user.slack_user_id, text=nudge)
+        return {"status": "Nudge sent!"}
+    except Exception as e:
+        print(f"Error sending nudge: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 app.include_router(router)
@@ -208,7 +234,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
+        host="localhost",
         port=8000,
         ssl_keyfile="certs/key.pem",
         ssl_certfile="certs/cert.pem",

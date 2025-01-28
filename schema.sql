@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
     disabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT NOW(),
     slack_user_id TEXT UNIQUE,
-    slack_access_token BYTEA,  -- Encrypted storage
+    slack_access_token BYTEA,  -- User token (encrypted)
+    slack_bot_token BYTEA,     -- Bot token (encrypted)
     slack_team_id TEXT
 );
 
