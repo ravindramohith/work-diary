@@ -12,10 +12,15 @@ CREATE TABLE IF NOT EXISTS users (
     hashed_password VARCHAR(255) NOT NULL,
     disabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT NOW(),
+    -- Slack fields
     slack_user_id TEXT UNIQUE,
     slack_access_token BYTEA,  -- User token (encrypted)
     slack_bot_token BYTEA,     -- Bot token (encrypted)
-    slack_team_id TEXT
+    slack_team_id TEXT,
+    -- Google Calendar fields
+    google_refresh_token BYTEA,  -- Encrypted Google refresh token
+    google_calendar_connected BOOLEAN DEFAULT FALSE,
+    google_calendar_id TEXT      -- Primary calendar ID
 );
 
 -- Slack OAuth States
@@ -26,12 +31,12 @@ CREATE TABLE IF NOT EXISTS slack_oauth_states (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Activity Logs (Slack/Jira/GitHub data)
+-- Activity Logs (Slack/Calendar data)
 CREATE TABLE IF NOT EXISTS activity_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
-    tool VARCHAR(50) NOT NULL,  -- 'slack', 'jira', 'github'
-    event_type VARCHAR(100),     -- 'message', 'commit', 'task'
+    tool VARCHAR(50) NOT NULL,  -- 'slack', 'calendar'
+    event_type VARCHAR(100),    -- 'message', 'meeting'
     duration_minutes INTEGER,
     timestamp TIMESTAMP DEFAULT NOW()
 );

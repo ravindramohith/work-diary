@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
 
@@ -25,11 +26,13 @@ class UserCreate(BaseModel):
 
 class UserDB(BaseModel):
     id: int
-    email: EmailStr
-    hashed_password: str
-    disabled: bool
+    email: str
+    disabled: bool = False
     created_at: datetime
-    slack_user_id: str | None = None
+    slack_user_id: Optional[str] = None
+    slack_team_id: Optional[str] = None
+    google_refresh_token: Optional[str] = None
+    google_calendar_connected: bool = False
 
     class Config:
         orm_mode = True

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from ..security import decrypt_token
 from openai import OpenAI
 from anthropic import Anthropic
+from .calendar import analyze_calendar_activity
 
 
 async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
@@ -302,12 +303,20 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
         raise e
 
 
-async def generate_slack_nudge(user_id: int, db: asyncpg.Connection):
-    """Generate a contextual nudge based on real-time Slack activity"""
+async def generate_slack_nudge(user_id: int, db: asyncpg.Connection) -> str:
+    """Generate a personalized nudge message based on Slack and Calendar activity"""
     try:
+        # Get Slack activity
         activity = await analyze_slack_activity(user_id, db)
 
-        # Get user's preferred name (display name or real name)
+        # Get Calendar activity
+        try:
+            calendar_data = await analyze_calendar_activity(user_id, db)
+        except Exception as e:
+            print(f"Error getting calendar data: {str(e)}")
+            calendar_data = None
+
+        # Get user's preferred name
         user_name = (
             activity["user_profile"]["display_name"]
             or activity["user_profile"]["first_name"]
@@ -315,7 +324,7 @@ async def generate_slack_nudge(user_id: int, db: asyncpg.Connection):
             or "there"
         )
 
-        # Format time analysis insights
+        # Format Slack insights
         time_analysis = activity["time_analysis"]
         peak_hours_str = ", ".join(
             [f"{hour}:00" for hour, _ in time_analysis["peak_hours"]]
@@ -323,7 +332,6 @@ async def generate_slack_nudge(user_id: int, db: asyncpg.Connection):
         busiest_day = time_analysis["busiest_days"][0][0]
         work_hours_percent = time_analysis["work_hours_ratio"] * 100
 
-        # Format thread analysis insights
         thread_analysis = activity["thread_analysis"]
         thread_engagement = {
             "total_threads": thread_analysis["total_threads"],
@@ -337,95 +345,95 @@ async def generate_slack_nudge(user_id: int, db: asyncpg.Connection):
             ),
         }
 
-        # Use Anthropic for risk analysis
+        # Use Anthropic for combined risk analysis
         anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        risk_analysis = anthropic.messages.create(
+        combined_analysis = anthropic.messages.create(
             model="claude-3-sonnet-20240229",
-            max_tokens=300,
+            max_tokens=400,
             messages=[
                 {
                     "role": "user",
                     "content": f"""
-                Analyze this Slack activity data for {user_name}'s burnout risk:
-                - Total messages in last 7 days: {activity['message_count']}
-                - Direct messages: {activity['dm_message_count']}
-                - Channel messages: {activity['channel_message_count']}
-                - Average response time: {activity['avg_response_time']:.1f}s
-                - After-hours messages: {activity['after_hours_messages']}
+                    Analyze this combined Slack and Calendar data for {user_name}'s burnout risk:
 
-                User Profile:
-                - Name: {user_name}
-                - Title: {activity['user_profile']['title']}
-                - Status: {activity['user_profile']['status_text']} {activity['user_profile']['status_emoji']}
+                    Slack Activity:
+                    - Total messages (7 days): {activity['message_count']}
+                    - Direct messages: {activity['dm_message_count']}
+                    - Channel messages: {activity['channel_message_count']}
+                    - After-hours messages: {activity['after_hours_messages']}
+                    - Average response time: {activity['avg_response_time']:.1f}s
+                    
+                    Time Analysis:
+                    - Peak activity hours: {peak_hours_str}
+                    - Busiest day: {busiest_day}
+                    - Work hours messages: {work_hours_percent:.1f}%
+                    - Daily breakdown: {time_analysis['daily_breakdown']}
+                    
+                    Thread Engagement:
+                    - Total threads: {thread_engagement['total_threads']}
+                    - Threads initiated: {thread_engagement['initiated_threads']}
+                    - Average thread length: {thread_engagement['avg_length']} messages
+                    - Deep discussions: {thread_engagement['deep_discussions']}
+                    - Replies per thread: {thread_engagement['engagement_ratio']}
+                    
+                    Calendar Activity (Last 24 hours):
+                    {f'''- Total meetings: {calendar_data["total_meetings"]}
+                    - Total meeting duration: {calendar_data["total_duration_minutes"]} minutes
+                    - After-hours meetings: {calendar_data["meetings_after_hours"]}
+                    - Early meetings: {calendar_data["early_meetings"]}
+                    - Back-to-back meetings: {calendar_data["back_to_back_meetings"]}''' if calendar_data else "No calendar data available"}
 
-                Time Analysis:
-                - Peak activity hours: {peak_hours_str}
-                - Busiest day: {busiest_day}
-                - Work hours messages: {work_hours_percent:.1f}%
-                - Daily breakdown: {time_analysis['daily_breakdown']}
+                    Deep Discussion Topics:
+                    {chr(10).join([
+                        f"- {disc['channel']}: {disc['topic']} ({disc['user_participation']}/{disc['length']} messages)"
+                        for disc in thread_analysis['deep_discussions'][:3]
+                    ])}
 
-                Thread Engagement:
-                - Total threads: {thread_engagement['total_threads']}
-                - Threads initiated: {thread_engagement['initiated_threads']}
-                - Average thread length: {thread_engagement['avg_length']} messages
-                - Deep discussions: {thread_engagement['deep_discussions']}
-                - Replies per thread: {thread_engagement['engagement_ratio']}
-                
-                Deep Discussion Topics:
-                {chr(10).join([
-                    f"- {disc['channel']}: {disc['topic']} ({disc['user_participation']}/{disc['length']} messages)"
-                    for disc in thread_analysis['deep_discussions'][:3]
-                ])}
+                    Sentiment Analysis:
+                    Daily patterns: {activity['daily_sentiment']}
+                    Channel patterns: {activity['channel_sentiment']}
+                    
+                    Consider:
+                    1. Balance between public and private communication
+                    2. After-hours messaging patterns
+                    3. Response time expectations
+                    4. Overall message volume
+                    5. Sentiment trends and emotional patterns
+                    6. Channel-specific communication styles
+                    7. Time-based work patterns
+                    8. Work-life balance based on message timing
+                    9. Thread engagement patterns
+                    10. Deep discussion involvement
 
-                Daily Sentiment Analysis:
-                {activity['daily_sentiment']}
-
-                Channel Sentiment Analysis:
-                {activity['channel_sentiment']}
-
-                Consider:
-                1. Balance between public and private communication
-                2. After-hours messaging patterns
-                3. Response time expectations
-                4. Overall message volume
-                5. Sentiment trends and emotional patterns
-                6. Channel-specific communication styles
-                7. Time-based work patterns
-                8. Work-life balance based on message timing
-                9. Thread engagement patterns
-                10. Deep discussion involvement
-
-                Analyze the data and return a JSON response in this exact format:
-                {{
-                    "risk_score": 0.7,
-                    "key_insights": [
-                        "First key insight about their patterns",
-                        "Second key insight about their behavior",
-                        "Third key insight about potential risks"
-                    ],
-                    "communication_pattern": "A brief description of their overall communication style",
-                    "sentiment_trend": "A description of their emotional patterns over time",
-                    "time_pattern_insights": [
-                        "First insight about their timing patterns",
-                        "Second insight about work hours vs after hours"
-                    ],
-                    "engagement_insights": [
-                        "First insight about how they participate in threads",
-                        "Second insight about their discussion style"
-                    ],
-                    "recommendations": [
-                        "First specific recommendation",
-                        "Second actionable suggestion"
-                    ]
-                }}
-
-                Note: Replace the example values with actual insights based on the data. Keep the JSON structure exactly as shown.
-                """,
+                    Return a JSON response analyzing both communication and meeting patterns:
+                    {{
+                        "overall_risk_score": 0.7,
+                        "key_insights": [
+                            "First insight combining both Slack and Calendar patterns",
+                            "Second insight about overall work patterns",
+                            "Third insight about potential burnout risks"
+                        ],
+                        "communication_insights": [
+                            "First insight about Slack usage",
+                            "Second insight about messaging patterns"
+                        ],
+                        "meeting_insights": [
+                            "First insight about calendar patterns",
+                            "Second insight about meeting load"
+                        ],
+                        "work_life_balance": "Analysis of overall work-life balance",
+                        "recommendations": [
+                            "First specific recommendation",
+                            "Second actionable suggestion",
+                            "Third practical tip"
+                        ]
+                    }}
+                    """,
                 }
             ],
         )
 
-        # Generate message with OpenAI
+        # Generate final message with OpenAI
         openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         message_response = openai.chat.completions.create(
             model="gpt-4",
@@ -433,48 +441,38 @@ async def generate_slack_nudge(user_id: int, db: asyncpg.Connection):
                 {
                     "role": "user",
                     "content": f"""
-                Generate a personalized message for {user_name} based on their Slack activity:
-                - Total messages: {activity['message_count']} 
-                - Direct messages: {activity['dm_message_count']}
-                - Channel messages: {activity['channel_message_count']}
-                - After-hours messages: {activity['after_hours_messages']}
-                - Average response time: {activity['avg_response_time']:.1f} seconds
-                - Peak activity: {peak_hours_str}
-                - Busiest day: {busiest_day}
-                - Work hours messages: {work_hours_percent:.1f}%
+                    Generate a personalized message for {user_name} based on their combined Slack and Calendar activity.
+                    
+                    Slack Activity:
+                    - Messages (7 days): {activity['message_count']}
+                    - After-hours messages: {activity['after_hours_messages']}
+                    - Peak activity: {peak_hours_str}
+                    - Work hours messages: {work_hours_percent:.1f}%
+                    - Deep discussions: {thread_engagement['deep_discussions']}
 
-                User Profile:
-                - Title: {activity['user_profile']['title']}
-                - Status: {activity['user_profile']['status_text']} {activity['user_profile']['status_emoji']}
+                    Calendar Activity:
+                    {f'''- Meetings today: {calendar_data["total_meetings"]}
+                    - Meeting duration: {calendar_data["total_duration_minutes"]} minutes
+                    - After-hours meetings: {calendar_data["meetings_after_hours"]}
+                    - Back-to-back meetings: {calendar_data["back_to_back_meetings"]}''' if calendar_data else "No calendar data available"}
 
-                Thread Engagement:
-                - Total threads: {thread_engagement['total_threads']}
-                - Threads initiated: {thread_engagement['initiated_threads']}
-                - Average thread length: {thread_engagement['avg_length']} messages
-                - Deep discussions: {thread_engagement['deep_discussions']}
-                - Replies per thread: {thread_engagement['engagement_ratio']}
+                    Combined Analysis: {combined_analysis.content}
+                    
+                    Generate a friendly, personalized message that:
+                    1. Uses their name naturally
+                    2. Acknowledges both communication and meeting patterns
+                    3. Notes any concerning patterns from either Slack or Calendar
+                    4. Offers specific, actionable suggestions
+                    5. Maintains an empathetic, supportive tone
+                    6. Ends with "Work Diary" as the bot name
 
-                Sentiment Analysis:
-                Daily patterns: {activity['daily_sentiment']}
-                Channel patterns: {activity['channel_sentiment']}
-                
-                Analysis: {risk_analysis.content}
-                
-                Generate a friendly, personalized Slack message that:
-                1. Uses their name ({user_name}) naturally in the message
-                2. Acknowledges their communication patterns
-                3. Notes any concerning time-based patterns
-                4. Highlights their engagement style (quick responses vs deep discussions)
-                5. Offers a specific, actionable suggestion
-                6. Ends with a supportive closing line mentioning "Work Diary" as the bot name
-                
-                Example closing lines:
-                - "Work Diary is here to support your well-being!"
-                - "Your Work Diary assistant is always here to help."
-                - "Keep up the great work, and remember Work Diary is here when you need insights!"
-    
-                Keep it casual and empathetic, not authoritative. Always end with a closing line that includes "Work Diary". Use emojis if appropriate.
-                """,
+                    Example closing lines:
+                    - "Work Diary is here to support your well-being!"
+                    - "Your Work Diary assistant is always here to help."
+                    - "Keep up the great work, and remember Work Diary is here when you need insights!"
+                    
+                    Keep it casual and empathetic, not authoritative. Always end with a closing line that includes "Work Diary". Use emojis if appropriate.
+                    """,
                 }
             ],
         )

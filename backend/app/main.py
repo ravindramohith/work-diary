@@ -11,11 +11,17 @@ from .auth import (
 )
 from .security import encrypt_token
 from .models import UserCreate, UserDB, Token
-import asyncpg, os, secrets
 from .services.slack import generate_slack_nudge
+from .services.calendar import (
+    create_oauth_flow,
+    analyze_calendar_activity,
+    GOOGLE_REDIRECT_URI,
+)
+import asyncpg, os, secrets
 from slack_sdk import WebClient
 from slack_sdk.oauth import AuthorizeUrlGenerator
 from fastapi.responses import RedirectResponse, HTMLResponse
+import httpx
 
 app = FastAPI()
 
@@ -225,6 +231,120 @@ async def send_slack_nudge(
     except Exception as e:
         print(f"Error sending nudge: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/connect-google")
+async def connect_google():
+    """Initiate Google Calendar OAuth flow"""
+    try:
+        flow = create_oauth_flow()
+        authorization_url, state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",  # Force consent screen to ensure we get refresh token
+        )
+        return RedirectResponse(authorization_url)
+    except Exception as e:
+        print(f"Error initiating Google OAuth: {str(e)}")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=oauth_init_failed")
+
+
+@router.get("/google-callback")
+async def google_callback(
+    code: str | None = None,
+    error: str | None = None,
+    state: str | None = None,
+    scope: str | None = None,
+    db: asyncpg.Connection = Depends(get_db),
+):
+    if error:
+        print(f"Error from Google: {error}")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error={error}")
+
+    if not code:
+        print("No code received from Google")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=no_code")
+
+    try:
+        flow = create_oauth_flow()
+
+        # Get the full URL of the current request with all parameters
+        current_url = f"{GOOGLE_REDIRECT_URI}?code={code}"
+        if state:
+            current_url += f"&state={state}"
+        if scope:
+            current_url += f"&scope={scope}"
+
+        # Fetch token with complete authorization response
+        flow.fetch_token(authorization_response=current_url)
+        credentials = flow.credentials
+
+        # Get user's email from Google
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {credentials.token}"},
+                )
+                response.raise_for_status()
+                user_info = response.json()
+                print("User info response:", user_info)
+
+                if "email" not in user_info:
+                    print("Email not found in user info:", user_info)
+                    return RedirectResponse(
+                        f"{FRONTEND_SUCCESS_URI}?error=email_not_found"
+                    )
+
+                google_email = user_info["email"]
+            except Exception as e:
+                print(f"Error getting user info: {str(e)}")
+                print(
+                    "Response content:", response.content if response else "No response"
+                )
+                return RedirectResponse(
+                    f"{FRONTEND_SUCCESS_URI}?error=user_info_failed"
+                )
+
+        # Store the refresh token
+        if not credentials.refresh_token:
+            print("No refresh token received")
+            return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=no_refresh_token")
+
+        # Check if user exists with this email
+        user = await db.fetchrow(
+            """
+            SELECT id, email 
+            FROM users 
+            WHERE email = $1
+            """,
+            google_email,
+        )
+
+        if not user:
+            print(f"No user found with email: {google_email}")
+            return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=user_not_found")
+
+        print(f"Updating Google Calendar credentials for user: {google_email}")
+
+        # Update the user's Google Calendar credentials
+        await db.execute(
+            """
+            UPDATE users 
+            SET 
+                google_refresh_token = $1,
+                google_calendar_connected = true
+            WHERE email = $2
+            """,
+            encrypt_token(credentials.refresh_token),
+            google_email,
+        )
+
+        return RedirectResponse(FRONTEND_SUCCESS_URI)
+    except Exception as e:
+        print(f"Error during Google OAuth: {str(e)}")
+        print(f"Full error details: {repr(e)}")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=oauth_failed")
 
 
 app.include_router(router)
