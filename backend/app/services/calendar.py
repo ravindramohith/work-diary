@@ -208,7 +208,7 @@ async def analyze_calendar_activity(user_id: int, db: asyncpg.Connection):
         # Use Anthropic for calendar pattern analysis
         anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         calendar_analysis = anthropic.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=300,
             messages=[
                 {

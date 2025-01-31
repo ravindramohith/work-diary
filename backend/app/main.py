@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from app.database import get_db
+from .services.github import analyze_github_activity
 from .auth import (
     authenticate_user,
     create_access_token,
@@ -345,6 +346,129 @@ async def google_callback(
         print(f"Error during Google OAuth: {str(e)}")
         print(f"Full error details: {repr(e)}")
         return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=oauth_failed")
+
+
+# Define GitHub scopes
+GITHUB_SCOPES = [
+    "repo",
+    "read:org",
+    "read:user",
+    "user:email",
+    "read:discussion",
+    "read:project",
+]
+
+GITHUB_REDIRECT_URI = "https://localhost:8000/github-callback"
+
+
+@router.get("/connect-github")
+async def connect_github(user_email: str):
+    """Initiate GitHub OAuth flow"""
+    # Generate a random state
+    state = secrets.token_urlsafe(16)
+
+    auth_url = (
+        f"https://github.com/login/oauth/authorize?"
+        f"client_id={os.getenv('GITHUB_CLIENT_ID')}&"
+        f"scope={','.join(GITHUB_SCOPES)}&"
+        f"redirect_uri={GITHUB_REDIRECT_URI}&"
+        f"state={state}"
+    )
+
+    # Include the user's email in the state to retrieve it in the callback
+    state_with_email = f"{state}:{user_email}"
+
+    return RedirectResponse(auth_url.replace(state, state_with_email))
+
+
+@router.get("/github-callback")
+async def github_callback(
+    code: str | None = None,
+    error: str | None = None,
+    state: str | None = None,
+    db: asyncpg.Connection = Depends(get_db),
+):
+    if error:
+        print(f"Error from GitHub: {error}")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error={error}")
+
+    if not code or not state:
+        print("No code or state received from GitHub")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=no_code_or_state")
+
+    try:
+        # Extract email from state
+        state_parts = state.split(":")
+        if len(state_parts) != 2:
+            print("Invalid state format")
+            return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=invalid_state")
+
+        _, user_email = state_parts
+        print(f"User email: {user_email}")
+        # Exchange code for token
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://github.com/login/oauth/access_token",
+                headers={"Accept": "application/json"},
+                data={
+                    "client_id": os.getenv("GITHUB_CLIENT_ID"),
+                    "client_secret": os.getenv("GITHUB_CLIENT_SECRET"),
+                    "code": code,
+                    "redirect_uri": GITHUB_REDIRECT_URI,
+                },
+            )
+            token_data = token_response.json()
+            access_token = token_data.get("access_token")
+
+            # Get GitHub user info
+            user_response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+            )
+            github_user = user_response.json()
+            print(
+                str(github_user["id"]),
+                github_user["login"],
+                encrypt_token(access_token),
+                user_email,
+            )
+            # Store GitHub info in database using the email from state
+            await db.execute(
+                """
+                UPDATE users 
+                SET 
+                    github_user_id = $1,
+                    github_username = $2,
+                    github_access_token = $3
+                WHERE email = $4
+                """,
+                str(github_user["id"]),
+                github_user["login"],
+                encrypt_token(access_token),
+                user_email,  # Use the email from state instead of GitHub email
+            )
+
+        return RedirectResponse(FRONTEND_SUCCESS_URI)
+    except Exception as e:
+        print(f"Error during GitHub OAuth: {str(e)}")
+        return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error={str(e)}")
+
+
+@router.post("/github/analyze")
+async def analyze_github(
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Analyze GitHub activity"""
+    try:
+        analysis = await analyze_github_activity(current_user.id, db)
+        return analysis
+    except Exception as e:
+        print(f"Error analyzing GitHub activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 app.include_router(router)

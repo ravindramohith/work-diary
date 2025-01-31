@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS users (
     slack_access_token BYTEA,  -- User token (encrypted)
     slack_bot_token BYTEA,     -- Bot token (encrypted)
     slack_team_id TEXT,
+    -- GitHub fields
+    github_user_id TEXT UNIQUE,
+    github_username TEXT,
+    github_access_token BYTEA,  -- Encrypted GitHub token
+    github_org_name TEXT,       -- Main organization name
     -- Google Calendar fields
     google_refresh_token BYTEA,  -- Encrypted Google refresh token
     google_calendar_connected BOOLEAN DEFAULT FALSE,

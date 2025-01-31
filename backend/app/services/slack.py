@@ -5,6 +5,7 @@ from ..security import decrypt_token
 from openai import OpenAI
 from anthropic import Anthropic
 from .calendar import analyze_calendar_activity
+from .github import analyze_github_activity
 
 
 async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
@@ -239,7 +240,7 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
                     messages[:50]
                 )  # Limit to 50 messages per day
                 sentiment_analysis = anthropic.messages.create(
-                    model="claude-3-sonnet-20240229",
+                    model="claude-3-5-sonnet-20241022",
                     max_tokens=150,
                     messages=[
                         {
@@ -262,7 +263,7 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
             if messages:
                 combined_messages = "\n".join(messages[:50])
                 sentiment_analysis = anthropic.messages.create(
-                    model="claude-3-sonnet-20240229",
+                    model="claude-3-5-sonnet-20241022",
                     max_tokens=150,
                     messages=[
                         {
@@ -304,181 +305,96 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
 
 
 async def generate_slack_nudge(user_id: int, db: asyncpg.Connection) -> str:
-    """Generate a personalized nudge message based on Slack and Calendar activity"""
+    """Generate a personalized nudge message based on comprehensive activity analysis"""
     try:
-        # Get Slack activity
-        activity = await analyze_slack_activity(user_id, db)
-
-        # Get Calendar activity
+        # Get Slack activity data
+        slack_data = None
         try:
-            calendar_data = await analyze_calendar_activity(user_id, db)
+            slack_data = await analyze_slack_activity(user_id, db)
         except Exception as e:
-            print(f"Error getting calendar data: {str(e)}")
-            calendar_data = None
+            print(f"Error getting Slack analysis: {e}")
+            slack_data = None
 
-        # Get user's preferred name
-        user_name = (
-            activity["user_profile"]["display_name"]
-            or activity["user_profile"]["first_name"]
-            or activity["user_profile"]["real_name"]
-            or "there"
-        )
+        # Get calendar analysis
+        calendar_analysis = None
+        try:
+            calendar_analysis = await analyze_calendar_activity(user_id, db)
+        except Exception as e:
+            print(f"Error getting calendar analysis: {e}")
+            calendar_analysis = None
 
-        # Format Slack insights
-        time_analysis = activity["time_analysis"]
-        peak_hours_str = ", ".join(
-            [f"{hour}:00" for hour, _ in time_analysis["peak_hours"]]
-        )
-        busiest_day = time_analysis["busiest_days"][0][0]
-        work_hours_percent = time_analysis["work_hours_ratio"] * 100
+        # Get GitHub analysis
+        github_analysis = None
+        try:
+            github_analysis = await analyze_github_activity(user_id, db)
+        except Exception as e:
+            print(f"Error getting GitHub analysis: {e}")
+            github_analysis = None
 
-        thread_analysis = activity["thread_analysis"]
-        thread_engagement = {
-            "total_threads": thread_analysis["total_threads"],
-            "initiated_threads": thread_analysis["threads_initiated"],
-            "avg_length": f"{thread_analysis['avg_thread_length']:.1f}",
-            "deep_discussions": len(thread_analysis["deep_discussions"]),
-            "engagement_ratio": (
-                f"{(thread_analysis['thread_replies'] / thread_analysis['total_threads']):.1f}"
-                if thread_analysis["total_threads"] > 0
-                else "0"
-            ),
-        }
-
-        # Use Anthropic for combined risk analysis
+        # Prepare the combined analysis for AI
         anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        combined_analysis = anthropic.messages.create(
-            model="claude-3-sonnet-20240229",
+
+        # Add Cross-Platform Analysis
+        analysis_prompt = f"""
+        Hi! I'm Work Diary, your personal work-life balance assistant. My mission is to help you thrive at work while maintaining a healthy balance in life.
+
+        Analyzing {slack_data['user_profile']['display_name'] or slack_data['user_profile']['real_name'] or 'there'}'s activity data across platforms to provide personalized insights.
+
+        Analyze the following key metrics for a concise work-life balance assessment:
+
+        1. Critical Patterns:
+           - High-intensity periods (meetings + coding + communication)
+           - After-hours work across all platforms
+           - Response time expectations vs actual patterns
+           - Context switching frequency
+           - Deep work vs interruption ratio
+
+        2. Health Indicators:
+           - Meeting density vs coding sessions
+           - Communication load during focused work
+           - Weekend activity patterns
+           - Late-night commits or messages
+           - Back-to-back meeting frequency
+
+        3. Team Collaboration:
+           - Code review response times
+           - Meeting participation quality
+           - Slack thread engagement
+           - Cross-platform communication effectiveness
+
+        Generate a concise, actionable nudge that:
+        1. Start with a personalized greeting using their name
+        2. Highlight ONE most critical insight from each platform
+        3. Identify ONE major cross-platform pattern affecting well-being
+        4. Suggest TWO specific, high-impact improvements
+        5. Provide ONE measurable goal for next week
+        
+        Format: Keep the message under 200 words, friendly but direct, with clear action items.
+        Tone: Supportive and solution-focused, not critical.
+        Structure: 
+        - Personalized greeting
+        - Quick wins (immediate actions)
+        - Medium-term adjustments (habits to build)
+        - Specific metrics to track
+        
+        Always end with a sign-off that includes "Your Work Diary" and a brief encouraging note about work-life balance.
+        Example closings:
+        - "Your Work Diary is here to support your journey to better work-life harmony!"
+        - "Keep growing while staying balanced. Your Work Diary has your back!"
+        - "Your Work Diary is here to help you thrive at work and life!"
+
+        Focus on the most impactful insights that could make the biggest difference to their work-life balance."""
+
+        # Generate the nudge using Claude
+        response = anthropic.messages.create(
+            model="claude-3-5-sonnet-20241022",
             max_tokens=400,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"""
-                    Analyze this combined Slack and Calendar data for {user_name}'s burnout risk:
-
-                    Slack Activity:
-                    - Total messages (7 days): {activity['message_count']}
-                    - Direct messages: {activity['dm_message_count']}
-                    - Channel messages: {activity['channel_message_count']}
-                    - After-hours messages: {activity['after_hours_messages']}
-                    - Average response time: {activity['avg_response_time']:.1f}s
-                    
-                    Time Analysis:
-                    - Peak activity hours: {peak_hours_str}
-                    - Busiest day: {busiest_day}
-                    - Work hours messages: {work_hours_percent:.1f}%
-                    - Daily breakdown: {time_analysis['daily_breakdown']}
-                    
-                    Thread Engagement:
-                    - Total threads: {thread_engagement['total_threads']}
-                    - Threads initiated: {thread_engagement['initiated_threads']}
-                    - Average thread length: {thread_engagement['avg_length']} messages
-                    - Deep discussions: {thread_engagement['deep_discussions']}
-                    - Replies per thread: {thread_engagement['engagement_ratio']}
-                    
-                    Calendar Activity (Last 24 hours):
-                    {f'''- Total meetings: {calendar_data["total_meetings"]}
-                    - Total meeting duration: {calendar_data["total_duration_minutes"]} minutes
-                    - After-hours meetings: {calendar_data["meetings_after_hours"]}
-                    - Early meetings: {calendar_data["early_meetings"]}
-                    - Back-to-back meetings: {calendar_data["back_to_back_meetings"]}''' if calendar_data else "No calendar data available"}
-
-                    Deep Discussion Topics:
-                    {chr(10).join([
-                        f"- {disc['channel']}: {disc['topic']} ({disc['user_participation']}/{disc['length']} messages)"
-                        for disc in thread_analysis['deep_discussions'][:3]
-                    ])}
-
-                    Sentiment Analysis:
-                    Daily patterns: {activity['daily_sentiment']}
-                    Channel patterns: {activity['channel_sentiment']}
-                    
-                    Consider:
-                    1. Balance between public and private communication
-                    2. After-hours messaging patterns
-                    3. Response time expectations
-                    4. Overall message volume
-                    5. Sentiment trends and emotional patterns
-                    6. Channel-specific communication styles
-                    7. Time-based work patterns
-                    8. Work-life balance based on message timing
-                    9. Thread engagement patterns
-                    10. Deep discussion involvement
-
-                    Return a JSON response analyzing both communication and meeting patterns:
-                    {{
-                        "overall_risk_score": 0.7,
-                        "key_insights": [
-                            "First insight combining both Slack and Calendar patterns",
-                            "Second insight about overall work patterns",
-                            "Third insight about potential burnout risks"
-                        ],
-                        "communication_insights": [
-                            "First insight about Slack usage",
-                            "Second insight about messaging patterns"
-                        ],
-                        "meeting_insights": [
-                            "First insight about calendar patterns",
-                            "Second insight about meeting load"
-                        ],
-                        "work_life_balance": "Analysis of overall work-life balance",
-                        "recommendations": [
-                            "First specific recommendation",
-                            "Second actionable suggestion",
-                            "Third practical tip"
-                        ]
-                    }}
-                    """,
-                }
-            ],
+            temperature=0.7,
+            messages=[{"role": "user", "content": analysis_prompt}],
         )
 
-        # Generate final message with OpenAI
-        openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        message_response = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"""
-                    Generate a personalized message for {user_name} based on their combined Slack and Calendar activity.
-                    
-                    Slack Activity:
-                    - Messages (7 days): {activity['message_count']}
-                    - After-hours messages: {activity['after_hours_messages']}
-                    - Peak activity: {peak_hours_str}
-                    - Work hours messages: {work_hours_percent:.1f}%
-                    - Deep discussions: {thread_engagement['deep_discussions']}
-
-                    Calendar Activity:
-                    {f'''- Meetings today: {calendar_data["total_meetings"]}
-                    - Meeting duration: {calendar_data["total_duration_minutes"]} minutes
-                    - After-hours meetings: {calendar_data["meetings_after_hours"]}
-                    - Back-to-back meetings: {calendar_data["back_to_back_meetings"]}''' if calendar_data else "No calendar data available"}
-
-                    Combined Analysis: {combined_analysis.content}
-                    
-                    Generate a friendly, personalized message that:
-                    1. Uses their name naturally
-                    2. Acknowledges both communication and meeting patterns
-                    3. Notes any concerning patterns from either Slack or Calendar
-                    4. Offers specific, actionable suggestions
-                    5. Maintains an empathetic, supportive tone
-                    6. Ends with "Work Diary" as the bot name
-
-                    Example closing lines:
-                    - "Work Diary is here to support your well-being!"
-                    - "Your Work Diary assistant is always here to help."
-                    - "Keep up the great work, and remember Work Diary is here when you need insights!"
-                    
-                    Keep it casual and empathetic, not authoritative. Always end with a closing line that includes "Work Diary". Use emojis if appropriate.
-                    """,
-                }
-            ],
-        )
-
-        return message_response.choices[0].message.content
+        return response.content[0].text
 
     except Exception as e:
-        print(f"Error generating nudge: {str(e)}")
-        return f"Hey {user_name}! 👋 Just checking in to remind you to take care of yourself. Maybe it's a good time for a quick break? 🌟"
+        print(f"Error generating nudge: {e}")
+        return "I noticed some interesting patterns in your work habits. Would you like to discuss strategies for maintaining a healthy work-life balance?"

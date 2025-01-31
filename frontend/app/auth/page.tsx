@@ -146,7 +146,7 @@ export default function AuthPage() {
               : "Already have an account? Sign in"}
           </button>
         </div>
-
+{/* 
         <div className="mt-6">
           <button
             type="button"
@@ -163,7 +163,7 @@ export default function AuthPage() {
             </svg>
             Connect with Slack
           </button>
-        </div>
+        </div> */}
       </div>
     </div>
   );

@@ -157,6 +157,69 @@ export default function Dashboard() {
               )}
             </div>
 
+            {/* GitHub Connection */}
+            <div className="mt-6">
+              <h2 className="text-lg font-semibold">GitHub Connection</h2>
+              {user?.github_user_id ? (
+                <div className="space-y-4">
+                  <div className="flex items-center text-green-600">
+                    <svg
+                      className="w-5 h-5 mr-2"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    Connected to GitHub ({user.github_username})
+                  </div>
+
+                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                    <h3 className="text-md font-medium mb-2">
+                      GitHub Activity
+                    </h3>
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-600">
+                        Your GitHub activity will be analyzed to help maintain
+                        work-life balance.
+                      </p>
+                      <ul className="list-disc list-inside text-sm text-gray-600">
+                        <li>Commit frequency analysis</li>
+                        <li>Code review patterns</li>
+                        <li>After-hours coding detection</li>
+                        <li>Project contribution metrics</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (user?.email) {
+                      window.location.href = `https://localhost:8000/connect-github?user_email=${encodeURIComponent(
+                        user.email
+                      )}`;
+                    } else {
+                      console.error("User email not found");
+                    }
+                  }}
+                  className="flex items-center px-4 py-2 bg-[#24292e] text-white rounded hover:bg-[#3a3f44]"
+                >
+                  <svg
+                    className="w-5 h-5 mr-2"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                  </svg>
+                  Connect GitHub
+                </button>
+              )}
+            </div>
+
             {/* Work-Life Balance Section */}
             <div className="mt-6">
               <h2 className="text-lg font-semibold">Work-Life Balance</h2>
@@ -170,11 +233,11 @@ export default function Dashboard() {
                   disabled={sendNudgeMutation.isPending}
                   className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-indigo-400"
                 >
-                  {sendNudgeMutation.status === 'pending'
+                  {sendNudgeMutation.status === "pending"
                     ? "Sending..."
                     : "Send me a nudge"}
                 </button>
-                {sendNudgeMutation.status === 'error' && (
+                {sendNudgeMutation.status === "error" && (
                   <p className="mt-2 text-red-600">
                     Failed to send nudge. Please try again.
                   </p>

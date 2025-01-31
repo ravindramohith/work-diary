@@ -33,6 +33,9 @@ class UserDB(BaseModel):
     slack_team_id: Optional[str] = None
     google_refresh_token: Optional[str] = None
     google_calendar_connected: bool = False
+    github_user_id: Optional[str] = None
+    github_username: Optional[str] = None
+    github_access_token: Optional[str] = None
 
     class Config:
         orm_mode = True
