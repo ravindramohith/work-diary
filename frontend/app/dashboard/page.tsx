@@ -69,6 +69,13 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { LucideIcon } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface ActivityData {
   messagesByDay: {
@@ -479,239 +486,586 @@ export default function Dashboard() {
             <div className="space-y-8">
               <div>
                 <h2 className="text-2xl font-bold mb-4">SLACK ANALYSIS</h2>
-                <Tabs defaultValue="messages" className="space-y-4">
-                  <TabsList className="grid w-full grid-cols-3 gap-4">
-                    <TabsTrigger value="messages">Message Activity</TabsTrigger>
-                    <TabsTrigger value="responses">
-                      Response Patterns
-                    </TabsTrigger>
-                    <TabsTrigger value="workHours">Work Hours</TabsTrigger>
-                  </TabsList>
 
-                  <TabsContent value="messages" className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* Tabs for large screens */}
+                <div className="hidden lg:block">
+                  <Tabs defaultValue="messages" className="space-y-4">
+                    <TabsList className="grid w-full grid-cols-3 gap-4">
+                      <TabsTrigger
+                        value="messages"
+                        className="whitespace-nowrap"
+                      >
+                        Message Activity
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="responses"
+                        className="whitespace-nowrap"
+                      >
+                        Response Patterns
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="workHours"
+                        className="whitespace-nowrap"
+                      >
+                        Work Hours
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="messages" className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Daily Messages</CardTitle>
+                            <CardDescription>
+                              Message count over time
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.messagesByDay &&
+                            activityData.messagesByDay.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={activityData.messagesByDay}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="date" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="count"
+                                    stroke="#8884d8"
+                                  />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No message data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Work Hours vs After Hours</CardTitle>
+                            <CardDescription>
+                              Message distribution by time
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.workHoursVsAfterHours &&
+                            activityData.workHoursVsAfterHours.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={activityData.workHoursVsAfterHours}
+                                >
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="name" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Bar dataKey="messages" fill="#8884d8" />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No work hours data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Channel Distribution</CardTitle>
+                            <CardDescription>
+                              Messages by channel
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.channelDistribution &&
+                            activityData.channelDistribution.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={activityData.channelDistribution}
+                                    dataKey="value"
+                                    nameKey="name"
+                                    cx="50%"
+                                    cy="50%"
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    label
+                                  >
+                                    {activityData.channelDistribution.map(
+                                      (entry, index) => (
+                                        <Cell
+                                          key={`cell-${index}`}
+                                          fill={COLORS[index % COLORS.length]}
+                                        />
+                                      )
+                                    )}
+                                  </Pie>
+                                  <Tooltip />
+                                  <Legend />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No channel data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="responses" className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Response Times by Hour</CardTitle>
+                            <CardDescription>
+                              Average response time throughout the day
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.responseTimesByHour &&
+                            activityData.responseTimesByHour.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={activityData.responseTimesByHour}
+                                >
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="hour" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Bar
+                                    dataKey="avgResponseTime"
+                                    fill="#82ca9d"
+                                  />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No response time data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Weekday vs Weekend Activity</CardTitle>
+                            <CardDescription>
+                              Message patterns throughout the week
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.weekdayVsWeekend &&
+                            activityData.weekdayVsWeekend.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={activityData.weekdayVsWeekend}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="name" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Bar dataKey="messages" fill="#ffc658" />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No weekday/weekend data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="workHours" className="space-y-4">
                       <Card>
                         <CardHeader>
-                          <CardTitle>Daily Messages</CardTitle>
+                          <CardTitle>Daily Active Hours</CardTitle>
                           <CardDescription>
-                            Message count over time
+                            Number of active hours per day
                           </CardDescription>
                         </CardHeader>
-                        <CardContent className="h-[300px]">
-                          {activityData?.messagesByDay &&
-                          activityData.messagesByDay.length > 0 ? (
+                        <CardContent className="h-[400px]">
+                          {activityData?.dailyActiveHours &&
+                          activityData.dailyActiveHours.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={activityData.messagesByDay}>
+                              <LineChart data={activityData.dailyActiveHours}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis dataKey="date" />
                                 <YAxis />
                                 <Tooltip />
                                 <Line
                                   type="monotone"
-                                  dataKey="count"
-                                  stroke="#8884d8"
+                                  dataKey="hours"
+                                  stroke="#ff7300"
                                 />
                               </LineChart>
                             </ResponsiveContainer>
                           ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                              No message data available
+                              No active hours data available
                             </div>
                           )}
                         </CardContent>
                       </Card>
+                    </TabsContent>
+                  </Tabs>
+                </div>
 
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Work Hours vs After Hours</CardTitle>
-                          <CardDescription>
-                            Message distribution by time
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="h-[300px]">
-                          {activityData?.workHoursVsAfterHours &&
-                          activityData.workHoursVsAfterHours.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart
-                                data={activityData.workHoursVsAfterHours}
-                              >
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis />
-                                <Tooltip />
-                                <Bar dataKey="messages" fill="#8884d8" />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                              No work hours data available
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
+                {/* Select menu for medium and smaller screens */}
+                <div className="lg:hidden space-y-6">
+                  <Select
+                    defaultValue="messages"
+                    onValueChange={(value: string) => {
+                      const sections = document.querySelectorAll(
+                        "[data-slack-section]"
+                      );
+                      sections.forEach((section) => {
+                        if (section instanceof HTMLElement) {
+                          section.style.display =
+                            section.dataset.slackSection === value
+                              ? "block"
+                              : "none";
+                        }
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select view" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="messages">Message Activity</SelectItem>
+                      <SelectItem value="responses">
+                        Response Patterns
+                      </SelectItem>
+                      <SelectItem value="workHours">Work Hours</SelectItem>
+                    </SelectContent>
+                  </Select>
 
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Channel Distribution</CardTitle>
-                          <CardDescription>Messages by channel</CardDescription>
-                        </CardHeader>
-                        <CardContent className="h-[300px]">
-                          {activityData?.channelDistribution &&
-                          activityData.channelDistribution.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                <Pie
-                                  data={activityData.channelDistribution}
-                                  dataKey="value"
-                                  nameKey="name"
-                                  cx="50%"
-                                  cy="50%"
-                                  outerRadius={80}
-                                  fill="#8884d8"
-                                  label
+                  <div className="space-y-8">
+                    {/* Message Activity Section */}
+                    <div data-slack-section="messages" className="space-y-4">
+                      <h3 className="text-lg font-semibold">
+                        Message Activity
+                      </h3>
+                      <div className="grid gap-4">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Daily Messages</CardTitle>
+                            <CardDescription>
+                              Message count over time
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.messagesByDay &&
+                            activityData.messagesByDay.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={activityData.messagesByDay}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="date" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="count"
+                                    stroke="#8884d8"
+                                  />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No message data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Work Hours vs After Hours</CardTitle>
+                            <CardDescription>
+                              Message distribution by time
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.workHoursVsAfterHours &&
+                            activityData.workHoursVsAfterHours.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={activityData.workHoursVsAfterHours}
                                 >
-                                  {activityData.channelDistribution.map(
-                                    (entry, index) => (
-                                      <Cell
-                                        key={`cell-${index}`}
-                                        fill={COLORS[index % COLORS.length]}
-                                      />
-                                    )
-                                  )}
-                                </Pie>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="name" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Bar dataKey="messages" fill="#8884d8" />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No work hours data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Channel Distribution</CardTitle>
+                            <CardDescription>
+                              Messages by channel
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.channelDistribution &&
+                            activityData.channelDistribution.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={activityData.channelDistribution}
+                                    dataKey="value"
+                                    nameKey="name"
+                                    cx="50%"
+                                    cy="50%"
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    label
+                                  >
+                                    {activityData.channelDistribution.map(
+                                      (entry, index) => (
+                                        <Cell
+                                          key={`cell-${index}`}
+                                          fill={COLORS[index % COLORS.length]}
+                                        />
+                                      )
+                                    )}
+                                  </Pie>
+                                  <Tooltip />
+                                  <Legend />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No channel data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+
+                    {/* Response Patterns Section */}
+                    <div
+                      data-slack-section="responses"
+                      className="space-y-4"
+                      style={{ display: "none" }}
+                    >
+                      <h3 className="text-lg font-semibold">
+                        Response Patterns
+                      </h3>
+                      <div className="grid gap-4">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Response Times by Hour</CardTitle>
+                            <CardDescription>
+                              Average response time throughout the day
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.responseTimesByHour &&
+                            activityData.responseTimesByHour.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={activityData.responseTimesByHour}
+                                >
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="hour" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Bar
+                                    dataKey="avgResponseTime"
+                                    fill="#82ca9d"
+                                  />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No response time data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Weekday vs Weekend Activity</CardTitle>
+                            <CardDescription>
+                              Message patterns throughout the week
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="h-[300px]">
+                            {activityData?.weekdayVsWeekend &&
+                            activityData.weekdayVsWeekend.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={activityData.weekdayVsWeekend}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="name" />
+                                  <YAxis />
+                                  <Tooltip />
+                                  <Bar dataKey="messages" fill="#ffc658" />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                No weekday/weekend data available
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+
+                    {/* Work Hours Section */}
+                    <div
+                      data-slack-section="workHours"
+                      className="space-y-4"
+                      style={{ display: "none" }}
+                    >
+                      <h3 className="text-lg font-semibold">Work Hours</h3>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Daily Active Hours</CardTitle>
+                          <CardDescription>
+                            Number of active hours per day
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="h-[400px]">
+                          {activityData?.dailyActiveHours &&
+                          activityData.dailyActiveHours.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={activityData.dailyActiveHours}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="date" />
+                                <YAxis />
                                 <Tooltip />
-                                <Legend />
-                              </PieChart>
+                                <Line
+                                  type="monotone"
+                                  dataKey="hours"
+                                  stroke="#ff7300"
+                                />
+                              </LineChart>
                             </ResponsiveContainer>
                           ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                              No channel data available
+                              No active hours data available
                             </div>
                           )}
                         </CardContent>
                       </Card>
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="responses" className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Response Times by Hour</CardTitle>
-                          <CardDescription>
-                            Average response time throughout the day
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="h-[300px]">
-                          {activityData?.responseTimesByHour &&
-                          activityData.responseTimesByHour.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={activityData.responseTimesByHour}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="hour" />
-                                <YAxis />
-                                <Tooltip />
-                                <Bar dataKey="avgResponseTime" fill="#82ca9d" />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                              No response time data available
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Weekday vs Weekend Activity</CardTitle>
-                          <CardDescription>
-                            Message patterns throughout the week
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="h-[300px]">
-                          {activityData?.weekdayVsWeekend &&
-                          activityData.weekdayVsWeekend.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={activityData.weekdayVsWeekend}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis />
-                                <Tooltip />
-                                <Bar dataKey="messages" fill="#ffc658" />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                              No weekday/weekend data available
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="workHours" className="space-y-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Daily Active Hours</CardTitle>
-                        <CardDescription>
-                          Number of active hours per day
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="h-[400px]">
-                        {activityData?.dailyActiveHours &&
-                        activityData.dailyActiveHours.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={activityData.dailyActiveHours}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="date" />
-                              <YAxis />
-                              <Tooltip />
-                              <Line
-                                type="monotone"
-                                dataKey="hours"
-                                stroke="#ff7300"
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        ) : (
-                          <div className="flex items-center justify-center h-full text-muted-foreground">
-                            No active hours data available
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-                </Tabs>
+                  </div>
+                </div>
               </div>
 
               {user?.github_user_id && (
                 <div>
                   <h2 className="text-2xl font-bold mb-4">GITHUB ANALYSIS</h2>
-                  <Tabs defaultValue="activity" className="space-y-4">
-                    <TabsList className="grid w-full grid-cols-2 gap-4">
-                      <TabsTrigger value="activity">
-                        GitHub Activity
-                      </TabsTrigger>
-                      <TabsTrigger value="insights">Code Insights</TabsTrigger>
-                    </TabsList>
 
-                    <TabsContent value="activity" className="space-y-4">
-                      <GitHubActivity
-                        data={githubData}
-                        isLoading={githubLoading}
-                        user={user}
-                      />
-                    </TabsContent>
+                  {/* Tabs for large screens */}
+                  <div className="hidden lg:block">
+                    <Tabs defaultValue="activity" className="space-y-4">
+                      <TabsList className="grid w-full grid-cols-2 gap-4">
+                        <TabsTrigger
+                          value="activity"
+                          className="whitespace-nowrap"
+                        >
+                          GitHub Activity
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="insights"
+                          className="whitespace-nowrap"
+                        >
+                          Code Insights
+                        </TabsTrigger>
+                      </TabsList>
 
-                    <TabsContent value="insights" className="space-y-4">
-                      <GitHubInsights
-                        data={githubData}
-                        isLoading={githubLoading}
-                      />
-                    </TabsContent>
-                  </Tabs>
+                      <TabsContent value="activity" className="space-y-4">
+                        <GitHubActivity
+                          data={githubData}
+                          isLoading={githubLoading}
+                          user={user}
+                        />
+                      </TabsContent>
+
+                      <TabsContent value="insights" className="space-y-4">
+                        <GitHubInsights
+                          data={githubData}
+                          isLoading={githubLoading}
+                        />
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+
+                  {/* Select menu for medium and smaller screens */}
+                  <div className="lg:hidden space-y-6">
+                    <Select
+                      defaultValue="activity"
+                      onValueChange={(value: string) => {
+                        const sections = document.querySelectorAll(
+                          "[data-github-section]"
+                        );
+                        sections.forEach((section) => {
+                          if (section instanceof HTMLElement) {
+                            section.style.display =
+                              section.dataset.githubSection === value
+                                ? "block"
+                                : "none";
+                          }
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select view" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="activity">
+                          GitHub Activity
+                        </SelectItem>
+                        <SelectItem value="insights">Code Insights</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div className="space-y-8">
+                      {/* GitHub Activity Section */}
+                      <div data-github-section="activity" className="space-y-4">
+                        <h3 className="text-lg font-semibold">
+                          GitHub Activity
+                        </h3>
+                        <GitHubActivity
+                          data={githubData}
+                          isLoading={githubLoading}
+                          user={user}
+                        />
+                      </div>
+
+                      {/* Code Insights Section */}
+                      <div
+                        data-github-section="insights"
+                        className="space-y-4"
+                        style={{ display: "none" }}
+                      >
+                        <h3 className="text-lg font-semibold">Code Insights</h3>
+                        <GitHubInsights
+                          data={githubData}
+                          isLoading={githubLoading}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -763,351 +1117,774 @@ export default function Dashboard() {
               )}
 
               {user?.google_calendar_connected && (
-                <div>
+                <div className="mt-8">
                   <h2 className="text-2xl font-bold mb-4">CALENDAR ANALYSIS</h2>
-                  <Tabs defaultValue="meetings" className="space-y-4">
-                    <TabsList className="grid w-full grid-cols-3 gap-4">
-                      <TabsTrigger value="meetings">
-                        Meeting Activity
-                      </TabsTrigger>
-                      <TabsTrigger value="patterns">
-                        Meeting Patterns
-                      </TabsTrigger>
-                      <TabsTrigger value="stats">Meeting Stats</TabsTrigger>
-                    </TabsList>
 
-                    <TabsContent value="meetings" className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <Card>
-                          <CardHeader>
-                            <CardTitle>Daily Meeting Count</CardTitle>
-                            <CardDescription>
-                              Number of meetings per day
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="h-[300px]">
-                            {calendarData?.daily_meeting_counts ? (
-                              <ResponsiveContainer width="100%" height="100%">
-                                <LineChart
-                                  data={Object.entries(
-                                    calendarData.daily_meeting_counts
-                                  ).map(([date, count]) => ({
-                                    date,
-                                    count,
-                                  }))}
-                                >
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey="date" />
-                                  <YAxis />
-                                  <Tooltip />
-                                  <Line
-                                    type="monotone"
-                                    dataKey="count"
-                                    stroke="#8884d8"
-                                  />
-                                </LineChart>
-                              </ResponsiveContainer>
-                            ) : (
-                              <div className="flex items-center justify-center h-full text-muted-foreground">
-                                No meeting data available
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                  {/* Tabs for large screens */}
+                  <div className="hidden lg:block">
+                    <Tabs defaultValue="meetings" className="space-y-4">
+                      <TabsList className="grid w-full grid-cols-3 gap-4 mb-6">
+                        <TabsTrigger
+                          value="meetings"
+                          className="whitespace-nowrap text-sm"
+                        >
+                          Meeting Activity
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="patterns"
+                          className="whitespace-nowrap text-sm"
+                        >
+                          Meeting Patterns
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="stats"
+                          className="whitespace-nowrap text-sm"
+                        >
+                          Meeting Stats
+                        </TabsTrigger>
+                      </TabsList>
 
-                        <Card>
-                          <CardHeader>
-                            <CardTitle>Meeting Types Distribution</CardTitle>
-                            <CardDescription>
-                              Breakdown of meeting categories
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="h-[300px]">
-                            {calendarData?.meeting_types ? (
-                              <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                  <Pie
-                                    data={[
-                                      {
-                                        name: "1:1 Meetings",
-                                        value:
-                                          calendarData.meeting_types.one_on_one,
-                                      },
-                                      {
-                                        name: "Team Meetings",
-                                        value:
-                                          calendarData.meeting_types
-                                            .team_meetings,
-                                      },
-                                      {
-                                        name: "External Meetings",
-                                        value:
-                                          calendarData.meeting_types
-                                            .external_meetings,
-                                      },
-                                    ]}
-                                    dataKey="value"
-                                    nameKey="name"
-                                    cx="50%"
-                                    cy="50%"
-                                    outerRadius={80}
-                                    fill="#8884d8"
-                                    label
+                      <div className="space-y-8">
+                        <TabsContent value="meetings">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Daily Meeting Count</CardTitle>
+                                <CardDescription>
+                                  Number of meetings per day
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="h-[300px]">
+                                {calendarData?.daily_meeting_counts ? (
+                                  <ResponsiveContainer
+                                    width="100%"
+                                    height="100%"
                                   >
-                                    {Object.keys(
-                                      calendarData.meeting_types
-                                    ).map((_, index) => (
-                                      <Cell
-                                        key={`cell-${index}`}
-                                        fill={COLORS[index % COLORS.length]}
+                                    <LineChart
+                                      data={Object.entries(
+                                        calendarData.daily_meeting_counts
+                                      ).map(([date, count]) => ({
+                                        date,
+                                        count,
+                                      }))}
+                                    >
+                                      <CartesianGrid strokeDasharray="3 3" />
+                                      <XAxis dataKey="date" />
+                                      <YAxis />
+                                      <Tooltip />
+                                      <Line
+                                        type="monotone"
+                                        dataKey="count"
+                                        stroke="#8884d8"
                                       />
-                                    ))}
-                                  </Pie>
-                                  <Tooltip />
-                                  <Legend />
-                                </PieChart>
-                              </ResponsiveContainer>
-                            ) : (
-                              <div className="flex items-center justify-center h-full text-muted-foreground">
-                                No meeting type data available
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                                    </LineChart>
+                                  </ResponsiveContainer>
+                                ) : (
+                                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    No meeting data available
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>
+                                  Meeting Types Distribution
+                                </CardTitle>
+                                <CardDescription>
+                                  Breakdown of meeting categories
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="h-[300px]">
+                                {calendarData?.meeting_types ? (
+                                  <ResponsiveContainer
+                                    width="100%"
+                                    height="100%"
+                                  >
+                                    <PieChart>
+                                      <Pie
+                                        data={[
+                                          {
+                                            name: "1:1 Meetings",
+                                            value:
+                                              calendarData.meeting_types
+                                                .one_on_one,
+                                          },
+                                          {
+                                            name: "Team Meetings",
+                                            value:
+                                              calendarData.meeting_types
+                                                .team_meetings,
+                                          },
+                                          {
+                                            name: "External Meetings",
+                                            value:
+                                              calendarData.meeting_types
+                                                .external_meetings,
+                                          },
+                                        ]}
+                                        dataKey="value"
+                                        nameKey="name"
+                                        cx="50%"
+                                        cy="50%"
+                                        outerRadius={80}
+                                        fill="#8884d8"
+                                        label
+                                      >
+                                        {Object.keys(
+                                          calendarData.meeting_types
+                                        ).map((_, index) => (
+                                          <Cell
+                                            key={`cell-${index}`}
+                                            fill={COLORS[index % COLORS.length]}
+                                          />
+                                        ))}
+                                      </Pie>
+                                      <Tooltip />
+                                      <Legend />
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                ) : (
+                                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    No meeting type data available
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="patterns">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Weekly Pattern</CardTitle>
+                                <CardDescription>
+                                  Meeting distribution across weekdays
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="h-[300px]">
+                                {calendarData?.weekly_patterns ? (
+                                  <ResponsiveContainer
+                                    width="100%"
+                                    height="100%"
+                                  >
+                                    <BarChart
+                                      data={Object.entries(
+                                        calendarData.weekly_patterns
+                                      ).map(([day, count]) => ({
+                                        day,
+                                        count,
+                                      }))}
+                                    >
+                                      <CartesianGrid strokeDasharray="3 3" />
+                                      <XAxis dataKey="day" />
+                                      <YAxis />
+                                      <Tooltip />
+                                      <Bar dataKey="count" fill="#82ca9d" />
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                ) : (
+                                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    No weekly pattern data available
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Hourly Distribution</CardTitle>
+                                <CardDescription>
+                                  Meeting times throughout the day
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="h-[300px]">
+                                {calendarData?.hourly_distribution ? (
+                                  <ResponsiveContainer
+                                    width="100%"
+                                    height="100%"
+                                  >
+                                    <BarChart
+                                      data={Object.entries(
+                                        calendarData.hourly_distribution
+                                      ).map(([hour, count]) => ({
+                                        hour,
+                                        count,
+                                      }))}
+                                    >
+                                      <CartesianGrid strokeDasharray="3 3" />
+                                      <XAxis dataKey="hour" />
+                                      <YAxis />
+                                      <Tooltip />
+                                      <Bar dataKey="count" fill="#ffc658" />
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                ) : (
+                                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    No hourly distribution data available
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="stats">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                  <GalleryVerticalEnd className="h-5 w-5 text-primary" />
+                                  Meeting Metrics
+                                </CardTitle>
+                                <CardDescription>
+                                  Key meeting statistics and trends
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="space-y-6">
+                                <div className="space-y-2">
+                                  <div className="flex justify-between">
+                                    <span className="text-sm font-medium">
+                                      Total Meetings
+                                    </span>
+                                    <span className="text-sm text-muted-foreground">
+                                      {calendarData?.total_meetings}
+                                    </span>
+                                  </div>
+                                  <Progress
+                                    value={
+                                      (calendarData?.total_meetings || 0) / 2
+                                    }
+                                    className="h-2"
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div className="flex justify-between">
+                                    <span className="text-sm font-medium">
+                                      Average Duration
+                                    </span>
+                                    <span className="text-sm text-muted-foreground">
+                                      {calendarData?.average_meeting_duration?.toFixed(
+                                        1
+                                      )}{" "}
+                                      mins
+                                    </span>
+                                  </div>
+                                  <Progress
+                                    value={
+                                      (calendarData?.average_meeting_duration ||
+                                        0) / 1.2
+                                    }
+                                    className="h-2"
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div className="flex justify-between">
+                                    <span className="text-sm font-medium">
+                                      Meetings per Day
+                                    </span>
+                                    <span className="text-sm text-muted-foreground">
+                                      {calendarData?.meetings_per_day?.toFixed(
+                                        1
+                                      )}
+                                    </span>
+                                  </div>
+                                  <Progress
+                                    value={
+                                      (calendarData?.meetings_per_day || 0) * 10
+                                    }
+                                    className="h-2"
+                                  />
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                  <AlertCircle className="h-5 w-5 text-primary" />
+                                  Meeting Patterns
+                                </CardTitle>
+                                <CardDescription>
+                                  Potential work-life balance indicators
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="space-y-6">
+                                <div className="grid gap-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-medium leading-none">
+                                        Back-to-Back Meetings
+                                      </p>
+                                      <p className="text-sm text-muted-foreground">
+                                        Consecutive meetings without breaks
+                                      </p>
+                                    </div>
+                                    <Badge
+                                      variant={
+                                        (calendarData?.back_to_back_meetings ||
+                                          0) > 5
+                                          ? "destructive"
+                                          : "secondary"
+                                      }
+                                    >
+                                      {calendarData?.back_to_back_meetings || 0}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="flex items-center justify-between">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-medium leading-none">
+                                        After Hours Meetings
+                                      </p>
+                                      <p className="text-sm text-muted-foreground">
+                                        Meetings outside work hours
+                                      </p>
+                                    </div>
+                                    <Badge
+                                      variant={
+                                        (calendarData?.meetings_after_hours ||
+                                          0) > 3
+                                          ? "destructive"
+                                          : "secondary"
+                                      }
+                                    >
+                                      {calendarData?.meetings_after_hours || 0}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="flex items-center justify-between">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-medium leading-none">
+                                        Early Meetings
+                                      </p>
+                                      <p className="text-sm text-muted-foreground">
+                                        Meetings before 9 AM
+                                      </p>
+                                    </div>
+                                    <Badge
+                                      variant={
+                                        (calendarData?.early_meetings || 0) > 3
+                                          ? "destructive"
+                                          : "secondary"
+                                      }
+                                    >
+                                      {calendarData?.early_meetings || 0}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="flex items-center justify-between">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-medium leading-none">
+                                        Recurring Meetings
+                                      </p>
+                                      <p className="text-sm text-muted-foreground">
+                                        Regular scheduled meetings
+                                      </p>
+                                    </div>
+                                    <Badge variant="secondary">
+                                      {calendarData?.recurring_meetings || 0}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </TabsContent>
                       </div>
-                    </TabsContent>
+                    </Tabs>
+                  </div>
 
-                    <TabsContent value="patterns" className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <Card>
-                          <CardHeader>
-                            <CardTitle>Weekly Pattern</CardTitle>
-                            <CardDescription>
-                              Meeting distribution across weekdays
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="h-[300px]">
-                            {calendarData?.weekly_patterns ? (
-                              <ResponsiveContainer width="100%" height="100%">
-                                <BarChart
-                                  data={Object.entries(
-                                    calendarData.weekly_patterns
-                                  ).map(([day, count]) => ({
-                                    day,
-                                    count,
-                                  }))}
-                                >
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey="day" />
-                                  <YAxis />
-                                  <Tooltip />
-                                  <Bar dataKey="count" fill="#82ca9d" />
-                                </BarChart>
-                              </ResponsiveContainer>
-                            ) : (
-                              <div className="flex items-center justify-center h-full text-muted-foreground">
-                                No weekly pattern data available
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                  {/* Select menu and stacked cards for medium and smaller screens */}
+                  <div className="lg:hidden space-y-6">
+                    <Select
+                      defaultValue="meetings"
+                      onValueChange={(value: string) => {
+                        const sections =
+                          document.querySelectorAll("[data-section]");
+                        sections.forEach((section) => {
+                          if (section instanceof HTMLElement) {
+                            section.style.display =
+                              section.dataset.section === value
+                                ? "block"
+                                : "none";
+                          }
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select view" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="meetings">
+                          Meeting Activity
+                        </SelectItem>
+                        <SelectItem value="patterns">
+                          Meeting Patterns
+                        </SelectItem>
+                        <SelectItem value="stats">Meeting Stats</SelectItem>
+                      </SelectContent>
+                    </Select>
 
-                        <Card>
-                          <CardHeader>
-                            <CardTitle>Hourly Distribution</CardTitle>
-                            <CardDescription>
-                              Meeting times throughout the day
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="h-[300px]">
-                            {calendarData?.hourly_distribution ? (
-                              <ResponsiveContainer width="100%" height="100%">
-                                <BarChart
-                                  data={Object.entries(
-                                    calendarData.hourly_distribution
-                                  ).map(([hour, count]) => ({
-                                    hour,
-                                    count,
-                                  }))}
-                                >
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey="hour" />
-                                  <YAxis />
-                                  <Tooltip />
-                                  <Bar dataKey="count" fill="#ffc658" />
-                                </BarChart>
-                              </ResponsiveContainer>
-                            ) : (
-                              <div className="flex items-center justify-center h-full text-muted-foreground">
-                                No hourly distribution data available
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                    <div className="space-y-8">
+                      {/* Meeting Activity Section */}
+                      <div data-section="meetings" className="space-y-4">
+                        <h3 className="text-lg font-semibold">
+                          Meeting Activity
+                        </h3>
+                        <div className="grid gap-4">
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Daily Meeting Count</CardTitle>
+                              <CardDescription>
+                                Number of meetings per day
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[300px]">
+                              {calendarData?.daily_meeting_counts ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart
+                                    data={Object.entries(
+                                      calendarData.daily_meeting_counts
+                                    ).map(([date, count]) => ({
+                                      date,
+                                      count,
+                                    }))}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="date" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Line
+                                      type="monotone"
+                                      dataKey="count"
+                                      stroke="#8884d8"
+                                    />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                  No meeting data available
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Meeting Types Distribution</CardTitle>
+                              <CardDescription>
+                                Breakdown of meeting categories
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[300px]">
+                              {calendarData?.meeting_types ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart>
+                                    <Pie
+                                      data={[
+                                        {
+                                          name: "1:1 Meetings",
+                                          value:
+                                            calendarData.meeting_types
+                                              .one_on_one,
+                                        },
+                                        {
+                                          name: "Team Meetings",
+                                          value:
+                                            calendarData.meeting_types
+                                              .team_meetings,
+                                        },
+                                        {
+                                          name: "External Meetings",
+                                          value:
+                                            calendarData.meeting_types
+                                              .external_meetings,
+                                        },
+                                      ]}
+                                      dataKey="value"
+                                      nameKey="name"
+                                      cx="50%"
+                                      cy="50%"
+                                      outerRadius={80}
+                                      fill="#8884d8"
+                                      label
+                                    >
+                                      {Object.keys(
+                                        calendarData.meeting_types
+                                      ).map((_, index) => (
+                                        <Cell
+                                          key={`cell-${index}`}
+                                          fill={COLORS[index % COLORS.length]}
+                                        />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                  No meeting type data available
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        </div>
                       </div>
-                    </TabsContent>
 
-                    <TabsContent value="stats" className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                              <GalleryVerticalEnd className="h-5 w-5 text-primary" />
-                              Meeting Metrics
-                            </CardTitle>
-                            <CardDescription>
-                              Key meeting statistics and trends
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-6">
-                            <div className="space-y-2">
-                              <div className="flex justify-between">
-                                <span className="text-sm font-medium">
-                                  Total Meetings
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {calendarData?.total_meetings}
-                                </span>
-                              </div>
-                              <Progress
-                                value={(calendarData?.total_meetings || 0) / 2}
-                                className="h-2"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between">
-                                <span className="text-sm font-medium">
-                                  Average Duration
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {calendarData?.average_meeting_duration?.toFixed(
-                                    1
-                                  )}{" "}
-                                  mins
-                                </span>
-                              </div>
-                              <Progress
-                                value={
-                                  (calendarData?.average_meeting_duration ||
-                                    0) / 1.2
-                                }
-                                className="h-2"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between">
-                                <span className="text-sm font-medium">
-                                  Meetings per Day
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {calendarData?.meetings_per_day?.toFixed(1)}
-                                </span>
-                              </div>
-                              <Progress
-                                value={
-                                  (calendarData?.meetings_per_day || 0) * 10
-                                }
-                                className="h-2"
-                              />
-                            </div>
-                          </CardContent>
-                        </Card>
-
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                              <AlertCircle className="h-5 w-5 text-primary" />
-                              Meeting Patterns
-                            </CardTitle>
-                            <CardDescription>
-                              Potential work-life balance indicators
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-6">
-                            <div className="grid gap-4">
-                              <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                  <p className="text-sm font-medium leading-none">
-                                    Back-to-Back Meetings
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    Consecutive meetings without breaks
-                                  </p>
+                      {/* Meeting Patterns Section */}
+                      <div
+                        data-section="patterns"
+                        className="space-y-4"
+                        style={{ display: "none" }}
+                      >
+                        <h3 className="text-lg font-semibold">
+                          Meeting Patterns
+                        </h3>
+                        <div className="grid gap-4">
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Weekly Pattern</CardTitle>
+                              <CardDescription>
+                                Meeting distribution across weekdays
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[300px]">
+                              {calendarData?.weekly_patterns ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart
+                                    data={Object.entries(
+                                      calendarData.weekly_patterns
+                                    ).map(([day, count]) => ({
+                                      day,
+                                      count,
+                                    }))}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="day" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Bar dataKey="count" fill="#82ca9d" />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                  No weekly pattern data available
                                 </div>
-                                <Badge
-                                  variant={
-                                    (calendarData?.back_to_back_meetings || 0) >
-                                    5
-                                      ? "destructive"
-                                      : "secondary"
-                                  }
-                                >
-                                  {calendarData?.back_to_back_meetings || 0}
-                                </Badge>
-                              </div>
+                              )}
+                            </CardContent>
+                          </Card>
 
-                              <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                  <p className="text-sm font-medium leading-none">
-                                    After Hours Meetings
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    Meetings outside work hours
-                                  </p>
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Hourly Distribution</CardTitle>
+                              <CardDescription>
+                                Meeting times throughout the day
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[300px]">
+                              {calendarData?.hourly_distribution ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart
+                                    data={Object.entries(
+                                      calendarData.hourly_distribution
+                                    ).map(([hour, count]) => ({
+                                      hour,
+                                      count,
+                                    }))}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="hour" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Bar dataKey="count" fill="#ffc658" />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                  No hourly distribution data available
                                 </div>
-                                <Badge
-                                  variant={
-                                    (calendarData?.meetings_after_hours || 0) >
-                                    3
-                                      ? "destructive"
-                                      : "secondary"
-                                  }
-                                >
-                                  {calendarData?.meetings_after_hours || 0}
-                                </Badge>
-                              </div>
-
-                              <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                  <p className="text-sm font-medium leading-none">
-                                    Early Meetings
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    Meetings before 9 AM
-                                  </p>
-                                </div>
-                                <Badge
-                                  variant={
-                                    (calendarData?.early_meetings || 0) > 3
-                                      ? "destructive"
-                                      : "secondary"
-                                  }
-                                >
-                                  {calendarData?.early_meetings || 0}
-                                </Badge>
-                              </div>
-
-                              <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                  <p className="text-sm font-medium leading-none">
-                                    Recurring Meetings
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    Regular scheduled meetings
-                                  </p>
-                                </div>
-                                <Badge variant="secondary">
-                                  {calendarData?.recurring_meetings || 0}
-                                </Badge>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
+                              )}
+                            </CardContent>
+                          </Card>
+                        </div>
                       </div>
-                    </TabsContent>
-                  </Tabs>
+
+                      {/* Meeting Stats Section */}
+                      <div
+                        data-section="stats"
+                        className="space-y-4"
+                        style={{ display: "none" }}
+                      >
+                        <h3 className="text-lg font-semibold">Meeting Stats</h3>
+                        <div className="grid gap-4">
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="flex items-center gap-2">
+                                <GalleryVerticalEnd className="h-5 w-5 text-primary" />
+                                Meeting Metrics
+                              </CardTitle>
+                              <CardDescription>
+                                Key meeting statistics and trends
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                              <div className="space-y-2">
+                                <div className="flex justify-between">
+                                  <span className="text-sm font-medium">
+                                    Total Meetings
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {calendarData?.total_meetings}
+                                  </span>
+                                </div>
+                                <Progress
+                                  value={
+                                    (calendarData?.total_meetings || 0) / 2
+                                  }
+                                  className="h-2"
+                                />
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex justify-between">
+                                  <span className="text-sm font-medium">
+                                    Average Duration
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {calendarData?.average_meeting_duration?.toFixed(
+                                      1
+                                    )}{" "}
+                                    mins
+                                  </span>
+                                </div>
+                                <Progress
+                                  value={
+                                    (calendarData?.average_meeting_duration ||
+                                      0) / 1.2
+                                  }
+                                  className="h-2"
+                                />
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex justify-between">
+                                  <span className="text-sm font-medium">
+                                    Meetings per Day
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {calendarData?.meetings_per_day?.toFixed(1)}
+                                  </span>
+                                </div>
+                                <Progress
+                                  value={
+                                    (calendarData?.meetings_per_day || 0) * 10
+                                  }
+                                  className="h-2"
+                                />
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="flex items-center gap-2">
+                                <AlertCircle className="h-5 w-5 text-primary" />
+                                Meeting Patterns
+                              </CardTitle>
+                              <CardDescription>
+                                Potential work-life balance indicators
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                              <div className="grid gap-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium leading-none">
+                                      Back-to-Back Meetings
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Consecutive meetings without breaks
+                                    </p>
+                                  </div>
+                                  <Badge
+                                    variant={
+                                      (calendarData?.back_to_back_meetings ||
+                                        0) > 5
+                                        ? "destructive"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {calendarData?.back_to_back_meetings || 0}
+                                  </Badge>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium leading-none">
+                                      After Hours Meetings
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Meetings outside work hours
+                                    </p>
+                                  </div>
+                                  <Badge
+                                    variant={
+                                      (calendarData?.meetings_after_hours ||
+                                        0) > 3
+                                        ? "destructive"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {calendarData?.meetings_after_hours || 0}
+                                  </Badge>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium leading-none">
+                                      Early Meetings
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Meetings before 9 AM
+                                    </p>
+                                  </div>
+                                  <Badge
+                                    variant={
+                                      (calendarData?.early_meetings || 0) > 3
+                                        ? "destructive"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {calendarData?.early_meetings || 0}
+                                  </Badge>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium leading-none">
+                                      Recurring Meetings
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Regular scheduled meetings
+                                    </p>
+                                  </div>
+                                  <Badge variant="secondary">
+                                    {calendarData?.recurring_meetings || 0}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
