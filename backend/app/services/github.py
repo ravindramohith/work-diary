@@ -94,7 +94,7 @@ async def analyze_github_activity(user_id: int, db, days: int = 7):
                 ]:
                     activity_stats["comment_count"] += 1
 
-                # Store event details for AI analysis with IST time
+                # Store event details for AI analysis
                 event_details = {
                     "type": event_type,
                     "repo": event["repo"]["name"],

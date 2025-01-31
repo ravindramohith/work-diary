@@ -1,7 +1,12 @@
 "use client";
 
 import { useQuery, useMutation, UseQueryOptions } from "@tanstack/react-query";
-import { authenticatedRequest, checkAuth, getToken } from "@/utils/auth";
+import {
+  authenticatedRequest,
+  checkAuth,
+  getToken,
+  removeToken,
+} from "@/utils/auth";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +34,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
+import { LoadingSpinner } from "@/components/loading-spinner";
 
 interface User {
   id: number;
@@ -173,7 +179,7 @@ export default function EditProfile() {
   };
 
   const [openDialog, setOpenDialog] = useState<{
-    type: "name" | "password" | "disconnect";
+    type: "name" | "password" | "disconnect" | "disable";
     service?: string;
   } | null>(null);
 
@@ -232,11 +238,48 @@ export default function EditProfile() {
     }));
   };
 
-  if (isLoading || !user) return <div>Loading...</div>;
+  const handleLogout = () => {
+    removeToken();
+    toast({
+      title: "Logged Out",
+      description: "You have been logged out successfully.",
+    });
+    router.push("/auth");
+  };
+
+  const handleDisableAccount = async () => {
+    try {
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/disable-account`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${getToken()}`,
+          },
+        }
+      );
+      toast({
+        title: "Account Disabled",
+        description: "Your account has been successfully disabled.",
+      });
+      handleLogout();
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to disable account. Please try again.",
+      });
+    }
+    setOpenDialog(null);
+  };
+
+  if (isLoading || !user) return <LoadingSpinner text="Loading your data" />;
 
   const isNameChanged = nameForm.name !== user.name;
   const isPasswordValid =
     passwordForm.password.length >= 6 &&
+    /[A-Z]/.test(passwordForm.password) &&
+    /[0-9]/.test(passwordForm.password) &&
     passwordForm.password === passwordForm.confirmPassword;
 
   return (
@@ -316,6 +359,35 @@ export default function EditProfile() {
               }
             >
               Disconnect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={openDialog?.type === "disable"}
+        onOpenChange={(open) => !open && setOpenDialog(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Disable Account</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to disable your account? This will:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>Log you out of all sessions</li>
+                <li>Disable access to all connected services</li>
+                <li>
+                  Prevent you from logging in until account is reactivated
+                </li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenDialog(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDisableAccount}>
+              Disable Account
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -406,6 +478,62 @@ export default function EditProfile() {
                       onChange={handlePasswordChange}
                       placeholder="Enter new password"
                     />
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`h-1 w-1 rounded-full ${
+                            passwordForm.password.length >= 6
+                              ? "bg-green-500"
+                              : "bg-red-500"
+                          }`}
+                        />
+                        <span
+                          className={
+                            passwordForm.password.length >= 6
+                              ? "text-green-500"
+                              : "text-red-500"
+                          }
+                        >
+                          At least 6 characters
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`h-1 w-1 rounded-full ${
+                            /[A-Z]/.test(passwordForm.password)
+                              ? "bg-green-500"
+                              : "bg-red-500"
+                          }`}
+                        />
+                        <span
+                          className={
+                            /[A-Z]/.test(passwordForm.password)
+                              ? "text-green-500"
+                              : "text-red-500"
+                          }
+                        >
+                          At least one uppercase letter
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`h-1 w-1 rounded-full ${
+                            /[0-9]/.test(passwordForm.password)
+                              ? "bg-green-500"
+                              : "bg-red-500"
+                          }`}
+                        />
+                        <span
+                          className={
+                            /[0-9]/.test(passwordForm.password)
+                              ? "text-green-500"
+                              : "text-red-500"
+                          }
+                        >
+                          At least one number
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -424,6 +552,28 @@ export default function EditProfile() {
                       onChange={handlePasswordChange}
                       placeholder="Confirm new password"
                     />
+                    <div className="flex items-center gap-2 text-sm">
+                      <div
+                        className={`h-1 w-1 rounded-full ${
+                          passwordForm.password ===
+                            passwordForm.confirmPassword &&
+                          passwordForm.confirmPassword
+                            ? "bg-green-500"
+                            : "bg-red-500"
+                        }`}
+                      />
+                      <span
+                        className={
+                          passwordForm.password ===
+                            passwordForm.confirmPassword &&
+                          passwordForm.confirmPassword
+                            ? "text-green-500"
+                            : "text-red-500"
+                        }
+                      >
+                        Passwords match
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex gap-4">
@@ -578,6 +728,45 @@ export default function EditProfile() {
                       Connect
                     </Button>
                   )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-destructive">
+                  Account Management
+                </CardTitle>
+                <CardDescription>
+                  Manage your account settings and access
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">Account Access</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Sign out of your account or temporarily disable access
+                    </p>
+                    <div className="flex gap-4">
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleLogout}
+                      >
+                        <Lock className="h-4 w-4 mr-2" />
+                        Logout
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="w-full"
+                        onClick={() => setOpenDialog({ type: "disable" })}
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Disable Account
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

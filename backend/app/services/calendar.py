@@ -343,3 +343,167 @@ async def analyze_calendar_activity(
     except Exception as e:
         print(f"Error analyzing calendar activity: {str(e)}")
         raise e
+
+
+async def get_calendar_activity_stats(
+    user_id: int, db: asyncpg.Connection, days: int = 7
+):
+    """Get calendar activity statistics without AI analysis"""
+    try:
+        service = await get_calendar_service(user_id, db)
+
+        # Get events from the last N days in UTC
+        now = datetime.now(timezone.utc)
+        start_time = (now - timedelta(days=days)).isoformat()
+        end_time = now.isoformat()
+
+        events_result = (
+            service.events()
+            .list(
+                calendarId="primary",
+                timeMin=start_time,
+                timeMax=end_time,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
+
+        events = events_result.get("items", [])
+
+        # Set timezone to IST
+        ist = timezone(timedelta(hours=5, minutes=30))
+
+        # Initialize analytics data
+        calendar_stats = {
+            "total_meetings": len(events),
+            "total_duration_minutes": 0,
+            "meetings_after_hours": 0,  # Meetings after 5 PM
+            "early_meetings": 0,  # Meetings before 9 AM
+            "back_to_back_meetings": 0,
+            "recurring_meetings": 0,
+            "daily_meeting_counts": {},  # Track meetings per day
+            "weekly_patterns": {  # Track meeting patterns by day of week
+                "Monday": 0,
+                "Tuesday": 0,
+                "Wednesday": 0,
+                "Thursday": 0,
+                "Friday": 0,
+                "Saturday": 0,
+                "Sunday": 0,
+            },
+            "hourly_distribution": {str(hour).zfill(2): 0 for hour in range(24)},
+            "meeting_durations": [],  # List of all meeting durations
+            "meeting_types": {  # Categorize meetings
+                "one_on_one": 0,
+                "team_meetings": 0,
+                "external_meetings": 0,
+            },
+        }
+
+        previous_end_time = None
+        seen_recurring_meetings = set()
+
+        for event in events:
+            # Skip events without timing information
+            if "dateTime" not in event.get("start", {}) or "dateTime" not in event.get(
+                "end", {}
+            ):
+                continue
+
+            # Convert to UTC first, then to IST
+            start_utc = datetime.fromisoformat(
+                event["start"]["dateTime"].replace("Z", "+00:00")
+            ).replace(tzinfo=timezone.utc)
+            end_utc = datetime.fromisoformat(
+                event["end"]["dateTime"].replace("Z", "+00:00")
+            ).replace(tzinfo=timezone.utc)
+
+            start = start_utc.astimezone(ist)
+            end = end_utc.astimezone(ist)
+
+            # Track daily counts
+            day_key = start.strftime("%Y-%m-%d")
+            calendar_stats["daily_meeting_counts"][day_key] = (
+                calendar_stats["daily_meeting_counts"].get(day_key, 0) + 1
+            )
+
+            # Track weekly patterns
+            day_name = start.strftime("%A")
+            calendar_stats["weekly_patterns"][day_name] += 1
+
+            # Track hourly distribution
+            hour = start.strftime("%H")
+            calendar_stats["hourly_distribution"][hour] += 1
+
+            # Track recurring meetings
+            if event.get("recurringEventId"):
+                recurring_id = event["recurringEventId"]
+                if recurring_id not in seen_recurring_meetings:
+                    seen_recurring_meetings.add(recurring_id)
+                    calendar_stats["recurring_meetings"] += 1
+
+            # Calculate duration
+            duration = (end - start).total_seconds() / 60  # in minutes
+            calendar_stats["total_duration_minutes"] += duration
+            calendar_stats["meeting_durations"].append(duration)
+
+            # Check if meeting is after hours (after 5 PM IST)
+            if start.hour >= 17:
+                calendar_stats["meetings_after_hours"] += 1
+
+            # Check if meeting is early (before 9 AM IST)
+            if start.hour < 9:
+                calendar_stats["early_meetings"] += 1
+
+            # Check for back-to-back meetings
+            if previous_end_time:
+                gap = (start - previous_end_time).total_seconds() / 60
+                if gap < 15:  # Less than 15 minutes between meetings
+                    calendar_stats["back_to_back_meetings"] += 1
+
+            previous_end_time = end
+
+            # Categorize meeting type
+            attendees = event.get("attendees", [])
+            num_attendees = len(attendees)
+
+            if num_attendees == 1:
+                calendar_stats["meeting_types"]["one_on_one"] += 1
+            elif all(
+                a.get("email", "").endswith(
+                    event.get("organizer", {}).get("email", "").split("@")[1]
+                )
+                for a in attendees
+            ):
+                calendar_stats["meeting_types"]["team_meetings"] += 1
+            else:
+                calendar_stats["meeting_types"]["external_meetings"] += 1
+
+        # Calculate averages and additional metrics
+        if calendar_stats["total_meetings"] > 0:
+            calendar_stats["average_meeting_duration"] = (
+                calendar_stats["total_duration_minutes"]
+                / calendar_stats["total_meetings"]
+            )
+            calendar_stats["meetings_per_day"] = calendar_stats["total_meetings"] / days
+
+            # Calculate median meeting duration
+            sorted_durations = sorted(calendar_stats["meeting_durations"])
+            mid = len(sorted_durations) // 2
+            calendar_stats["median_meeting_duration"] = (
+                sorted_durations[mid]
+                if len(sorted_durations) % 2
+                else (sorted_durations[mid - 1] + sorted_durations[mid]) / 2
+            )
+
+        # Sort daily meeting counts
+        calendar_stats["daily_meeting_counts"] = dict(
+            sorted(calendar_stats["daily_meeting_counts"].items())
+        )
+
+        return calendar_stats
+
+    except Exception as e:
+        print(f"Error fetching calendar activity: {str(e)}")
+        raise e

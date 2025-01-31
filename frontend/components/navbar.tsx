@@ -113,7 +113,10 @@ export function Navbar({ user, currentPage = "dashboard" }: NavbarProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-72" align="end" forceMount>
-            <div className="flex items-center justify-start gap-2 p-3 pb-2">
+            <DropdownMenuItem
+              onClick={() => router.push("/profile/edit")}
+              className="flex items-center justify-start gap-2 p-3 pb-2 cursor-pointer"
+            >
               <Avatar className="h-9 w-9">
                 <AvatarFallback>
                   {user?.name
@@ -130,19 +133,6 @@ export function Navbar({ user, currentPage = "dashboard" }: NavbarProps) {
                   <p className="font-medium text-sm">{user.name}</p>
                 )}
                 <p className="text-xs text-muted-foreground">{user?.email}</p>
-              </div>
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => router.push("/profile/edit")}
-              className="p-3 focus:bg-accent cursor-pointer flex items-center"
-            >
-              <User2 className="mr-3 h-4 w-4" />
-              <div className="flex flex-col">
-                <span className="font-medium">Edit Profile</span>
-                <span className="text-xs text-muted-foreground">
-                  Update your account information
-                </span>
               </div>
             </DropdownMenuItem>
             {!user?.slack_user_id && (

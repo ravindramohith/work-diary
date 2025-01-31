@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, APIRouter, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from app.database import get_db
 from .services.github import analyze_github_activity
 from .auth import (
@@ -29,6 +29,7 @@ from typing import Optional, Dict, Any, List
 from openai import OpenAI
 from collections import defaultdict
 import pytz
+import json
 
 app = FastAPI()
 
@@ -135,6 +136,14 @@ async def login_for_access_token(
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Check if account is disabled
+    if user["disabled"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled",
+        )
+
     access_token_expires = timedelta(
         minutes=float(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
     )
@@ -1002,6 +1011,366 @@ async def get_slack_activity(
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch Slack activity: {str(e)}"
         )
+
+
+@app.get("/github/activity")
+async def get_github_activity(
+    days: int = Query(default=7, ge=1, le=90),
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Get GitHub activity data for visualization"""
+    if not current_user.github_user_id:
+        raise HTTPException(status_code=400, detail="GitHub account not connected")
+
+    try:
+        # Get user's GitHub token
+        github_data = await db.fetchrow(
+            """
+            SELECT github_username, github_access_token
+            FROM users
+            WHERE id = $1
+            """,
+            current_user.id,
+        )
+
+        if not github_data or not github_data["github_access_token"]:
+            raise HTTPException(status_code=400, detail="GitHub tokens not found")
+
+        access_token = decrypt_token(github_data["github_access_token"])
+        username = github_data["github_username"]
+
+        # Calculate date range
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=days)
+
+        async with httpx.AsyncClient() as client:
+            # Get user's events
+            events_response = await client.get(
+                f"https://api.github.com/users/{username}/events",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+            )
+            events = events_response.json()
+
+            # Collect activity stats
+            activity_stats = {
+                "commit_count": 0,
+                "pr_count": 0,
+                "review_count": 0,
+                "issue_count": 0,
+                "comment_count": 0,
+                "active_repos": set(),
+                "events_by_day": {},
+                "language_distribution": {},  # New field for language stats
+            }
+
+            # Set timezone to IST
+            ist = timezone(timedelta(hours=5, minutes=30))
+
+            # Track unique repositories to fetch their languages
+            unique_repos = set()
+
+            for event in events:
+                # Convert event time to IST
+                event_utc = datetime.strptime(
+                    event["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+                ).replace(tzinfo=timezone.utc)
+                event_date = event_utc.astimezone(ist)
+
+                if start_date <= event_date <= end_date:
+                    event_type = event["type"]
+                    day = event_date.strftime("%Y-%m-%d")
+
+                    if day not in activity_stats["events_by_day"]:
+                        activity_stats["events_by_day"][day] = {}
+
+                    if event_type not in activity_stats["events_by_day"][day]:
+                        activity_stats["events_by_day"][day][event_type] = 0
+
+                    activity_stats["events_by_day"][day][event_type] += 1
+
+                    if "repo" in event:
+                        repo_name = event["repo"]["name"]
+                        activity_stats["active_repos"].add(repo_name)
+                        unique_repos.add(repo_name)
+
+                    # Track specific event types
+                    if event_type == "PushEvent":
+                        activity_stats["commit_count"] += len(
+                            event["payload"].get("commits", [])
+                        )
+                    elif event_type == "PullRequestEvent":
+                        activity_stats["pr_count"] += 1
+                    elif event_type == "PullRequestReviewEvent":
+                        activity_stats["review_count"] += 1
+                    elif event_type == "IssuesEvent":
+                        activity_stats["issue_count"] += 1
+                    elif event_type in [
+                        "IssueCommentEvent",
+                        "CommitCommentEvent",
+                        "PullRequestReviewCommentEvent",
+                    ]:
+                        activity_stats["comment_count"] += 1
+
+            # Fetch languages for each active repository
+            for repo in unique_repos:
+                try:
+                    # First get the repository details to handle redirects
+                    repo_response = await client.get(
+                        f"https://api.github.com/repos/{repo}",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "Accept": "application/vnd.github.v3+json",
+                        },
+                        follow_redirects=True,
+                    )
+
+                    if repo_response.status_code != 200:
+                        print(
+                            f"Error accessing repo {repo}: {repo_response.status_code}"
+                        )
+                        continue
+
+                    repo_data = repo_response.json()
+                    if repo_data.get("private", False):
+                        # Skip private repositories
+                        continue
+
+                    languages_response = await client.get(
+                        f"https://api.github.com/repos/{repo}/languages",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "Accept": "application/vnd.github.v3+json",
+                        },
+                        follow_redirects=True,
+                    )
+
+                    if languages_response.status_code != 200:
+                        print(
+                            f"Error fetching languages for repo {repo}: {languages_response.status_code}"
+                        )
+                        continue
+
+                    languages = languages_response.json()
+                    if not isinstance(languages, dict):
+                        print(f"Invalid language data for repo {repo}: {languages}")
+                        continue
+
+                    # Add language bytes to distribution with proper type conversion
+                    for language, bytes_count in languages.items():
+                        try:
+                            if language not in activity_stats["language_distribution"]:
+                                activity_stats["language_distribution"][language] = 0
+                            # Convert bytes_count to integer, handling any string format
+                            if isinstance(bytes_count, str):
+                                bytes_count = int(bytes_count.replace(",", ""))
+                            elif isinstance(bytes_count, (int, float)):
+                                bytes_count = int(bytes_count)
+                            else:
+                                print(
+                                    f"Invalid bytes count format for {language}: {bytes_count}"
+                                )
+                                continue
+                            activity_stats["language_distribution"][
+                                language
+                            ] += bytes_count
+                        except (ValueError, TypeError) as e:
+                            print(
+                                f"Error processing language {language} in repo {repo}: {str(e)}"
+                            )
+                            continue
+                except Exception as e:
+                    print(f"Error processing repo {repo}: {str(e)}")
+                    continue
+
+            # Convert language distribution to percentage
+            total_bytes = sum(activity_stats["language_distribution"].values())
+            if total_bytes > 0:
+                language_percentages = {
+                    lang: (bytes_count / total_bytes) * 100
+                    for lang, bytes_count in activity_stats[
+                        "language_distribution"
+                    ].items()
+                }
+                # Sort languages by percentage and take top 10
+                sorted_languages = sorted(
+                    language_percentages.items(), key=lambda x: x[1], reverse=True
+                )[:10]
+                # Format for frontend
+                activity_stats["language_distribution"] = [
+                    {"name": lang, "value": round(percentage, 2)}
+                    for lang, percentage in sorted_languages
+                ]
+            else:
+                activity_stats["language_distribution"] = []
+
+            # Convert active_repos to list for JSON serialization
+            activity_stats["active_repos"] = list(activity_stats["active_repos"])
+
+            return activity_stats
+
+    except Exception as e:
+        print(f"Error fetching GitHub activity: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch GitHub activity: {str(e)}"
+        )
+
+
+@router.get("/github/code-quality")
+async def get_code_quality_insights(
+    days: int = Query(default=7, ge=1, le=90),
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Get AI-powered code quality insights from GitHub activity"""
+    if not current_user.github_user_id:
+        raise HTTPException(status_code=400, detail="GitHub account not connected")
+
+    try:
+        # Get user's GitHub token
+        github_data = await db.fetchrow(
+            """
+            SELECT github_username, github_access_token
+            FROM users
+            WHERE id = $1
+            """,
+            current_user.id,
+        )
+
+        if not github_data or not github_data["github_access_token"]:
+            raise HTTPException(status_code=400, detail="GitHub tokens not found")
+
+        access_token = decrypt_token(github_data["github_access_token"])
+        username = github_data["github_username"]
+
+        async with httpx.AsyncClient() as client:
+            # Get user's recent commits
+            commits_response = await client.get(
+                f"https://api.github.com/users/{username}/events",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+            )
+            events = commits_response.json()
+
+            # Filter push events and get commit details
+            commit_messages = []
+            code_changes = []
+
+            for event in events:
+                if event["type"] == "PushEvent":
+                    for commit in event["payload"].get("commits", []):
+                        commit_messages.append(commit.get("message", ""))
+
+                        # Get detailed commit info including diff
+                        if "url" in commit:
+                            try:
+                                commit_detail = await client.get(
+                                    commit["url"],
+                                    headers={
+                                        "Authorization": f"Bearer {access_token}",
+                                        "Accept": "application/vnd.github.v3+json",
+                                    },
+                                )
+                                if commit_detail.status_code == 200:
+                                    commit_data = commit_detail.json()
+                                    if "files" in commit_data:
+                                        for file in commit_data["files"]:
+                                            if "patch" in file:
+                                                code_changes.append(
+                                                    {
+                                                        "file": file["filename"],
+                                                        "changes": file["patch"],
+                                                    }
+                                                )
+                            except Exception as e:
+                                print(f"Error fetching commit details: {str(e)}")
+                                continue
+
+            # Use OpenAI to analyze code quality
+            openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+            analysis_prompt = f"""Analyze the following GitHub activity and provide code quality insights:
+
+Commit Messages:
+{chr(10).join(commit_messages[:10])}  # Limit to last 10 commits
+
+Code Changes Samples:
+{chr(10).join([f"File: {change['file']}\nChanges:\n{change['changes']}" for change in code_changes[:5]])}  # Limit to 5 files
+
+Please provide analysis in the following JSON format:
+{{
+    "commit_quality": {{
+        "score": "1-10 rating of commit message quality",
+        "strengths": ["list of good practices observed"],
+        "improvements": ["list of suggested improvements"]
+    }},
+    "code_quality": {{
+        "score": "1-10 rating of code quality",
+        "strengths": ["list of good practices observed"],
+        "improvements": ["list of suggested improvements"]
+    }},
+    "best_practices": {{
+        "followed": ["list of best practices being followed"],
+        "suggested": ["list of best practices to adopt"]
+    }},
+    "summary": "A brief summary of overall code quality and suggestions"
+}}
+"""
+
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                response_format={"type": "json_object"},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a code quality analyst. Analyze GitHub activity and provide constructive feedback on code quality, commit messages, and development practices.",
+                    },
+                    {"role": "user", "content": analysis_prompt},
+                ],
+            )
+
+            return json.loads(response.choices[0].message.content)
+
+    except Exception as e:
+        print(f"Error analyzing code quality: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to analyze code quality: {str(e)}"
+        )
+
+
+@app.get("/calendar/activity")
+async def get_calendar_activity(
+    days: int = Query(default=7, ge=1, le=90),
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Get calendar activity data for visualization"""
+    if not current_user.google_calendar_connected:
+        raise HTTPException(status_code=400, detail="Google Calendar not connected")
+
+    try:
+        from .services.calendar import get_calendar_activity_stats
+
+        return await get_calendar_activity_stats(current_user.id, db, days)
+    except Exception as e:
+        print(f"Error fetching calendar activity: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch calendar activity: {str(e)}"
+        )
+
+
+@app.put("/disable-account")
+async def disable_account(
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    await db.execute("UPDATE users SET disabled = true WHERE id = $1", current_user.id)
+    return {"message": "Account disabled successfully"}
 
 
 app.include_router(router)

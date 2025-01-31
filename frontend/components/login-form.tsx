@@ -61,9 +61,18 @@ export function LoginForm({
     },
     onSuccess: handleAuthSuccess,
     onError: (error: any) => {
+      let errorMessage = "Login failed";
+      if (error.response?.data?.detail) {
+        if (error.response.data.detail === "Account is disabled") {
+          errorMessage =
+            "This account has been disabled. Please contact support for assistance.";
+        } else {
+          errorMessage = error.response.data.detail;
+        }
+      }
       toast({
         title: "Error",
-        description: error.response?.data?.detail || "Login failed",
+        description: errorMessage,
         variant: "destructive",
       });
     },
