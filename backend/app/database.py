@@ -1,15 +1,30 @@
 import os
 import asyncpg
 from dotenv import load_dotenv
-from ssl import create_default_context, CERT_NONE
+from typing import AsyncGenerator
 
 load_dotenv()
 
 
-async def get_db():
-    """Get database connection"""
-    ssl_context = create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = CERT_NONE
-
-    return await asyncpg.connect(os.getenv("DB"), ssl=ssl_context)
+async def get_db() -> AsyncGenerator[asyncpg.Connection, None]:
+    conn = None
+    try:
+        conn = await asyncpg.connect(
+            os.getenv("DB"),
+            statement_cache_size=0,  # Disable statement caching
+            server_settings={"jit": "off"},  # Disable JIT compilation
+            timeout=30.0,  # Add connection timeout
+        )
+        yield conn
+    except asyncpg.PostgresError as e:
+        print(f"Database error: {str(e)}")
+        raise
+    except Exception as e:
+        print(f"Unexpected database error: {str(e)}")
+        raise
+    finally:
+        if conn:
+            try:
+                await conn.close()
+            except Exception as e:
+                print(f"Error closing connection: {str(e)}")

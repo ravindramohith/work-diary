@@ -10,10 +10,87 @@ import {
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import axios from "axios";
-import { toast } from "react-hot-toast";
+import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import {
+  Menu,
+  User2,
+  Calendar,
+  Github,
+  CheckCircle2,
+  GalleryVerticalEnd,
+  Slack,
+  ChevronDown,
+  Clock,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Navbar } from "@/components/navbar";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+interface ActivityData {
+  messagesByDay: {
+    date: string;
+    count: number;
+  }[];
+  workHoursVsAfterHours: {
+    name: string;
+    messages: number;
+  }[];
+  channelDistribution: {
+    name: string;
+    value: number;
+  }[];
+  responseTimesByHour: {
+    hour: number;
+    avgResponseTime: number;
+  }[];
+  weekdayVsWeekend: {
+    name: string;
+    messages: number;
+  }[];
+  dailyActiveHours: {
+    date: string;
+    hours: number;
+  }[];
+}
+
+const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
 
 export default function Dashboard() {
   const router = useRouter();
+  const { toast } = useToast();
 
   const { data: user, isLoading } = useQuery({
     queryKey: ["user"],
@@ -23,11 +100,27 @@ export default function Dashboard() {
   const [analysisStatus, setAnalysisStatus] = useState("Send me a nudge");
   const [daysToAnalyze, setDaysToAnalyze] = useState(7);
 
+  const { data: activityData, isLoading: activityLoading } =
+    useQuery<ActivityData>({
+      queryKey: ["activity", daysToAnalyze],
+      queryFn: async () => {
+        const response = await authenticatedRequest(
+          `/slack/activity?days=${daysToAnalyze}`
+        );
+        return response.data;
+      },
+      enabled: !!user?.slack_user_id,
+    });
+
   const handleSendNudge = async () => {
     try {
       // Check if Slack is connected
       if (!user?.slack_user_id) {
-        toast.error("Please connect your Slack account to receive nudges!");
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Please connect your Slack account to receive nudges!",
+        });
         return;
       }
 
@@ -48,7 +141,11 @@ export default function Dashboard() {
           }
         );
       } catch (error) {
-        toast.error("Failed to analyze Slack activity");
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to analyze Slack activity",
+        });
         setAnalysisStatus("Send me a nudge");
         return;
       }
@@ -69,7 +166,11 @@ export default function Dashboard() {
           );
         } catch (error) {
           console.error("Calendar analysis failed:", error);
-          toast.error("Failed to analyze Calendar activity");
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to analyze Calendar activity",
+          });
         }
       }
 
@@ -89,7 +190,11 @@ export default function Dashboard() {
           );
         } catch (error) {
           console.error("GitHub analysis failed:", error);
-          toast.error("Failed to analyze GitHub activity");
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to analyze GitHub activity",
+          });
         }
       }
 
@@ -110,13 +215,20 @@ export default function Dashboard() {
       );
 
       setAnalysisStatus("Sent successfully!");
-      toast.success("Nudge sent successfully! Check your Slack.");
+      toast({
+        title: "Success",
+        description: "Nudge sent successfully! Check your Slack.",
+      });
       setTimeout(() => setAnalysisStatus("Send me a nudge"), 3000);
       return nudgeResponse.data;
     } catch (error) {
       console.error("Error sending nudge:", error);
       setAnalysisStatus("Failed to send nudge");
-      toast.error("Failed to send nudge. Please try again.");
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to send nudge. Please try again.",
+      });
       setTimeout(() => setAnalysisStatus("Send me a nudge"), 3000);
       throw error;
     }
@@ -133,221 +245,254 @@ export default function Dashboard() {
 
   if (isLoading) return <div>Loading...</div>;
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-            >
-              Logout
-            </button>
-          </div>
-
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-lg font-semibold">Profile Information</h2>
-              <p className="text-gray-600">Email: {user?.email}</p>
-            </div>
-
-            <div>
-              <h2 className="text-lg font-semibold">Slack Connection</h2>
-              {user?.slack_user_id ? (
-                <div className="space-y-4">
-                  <div className="flex items-center text-green-600">
-                    <svg
-                      className="w-5 h-5 mr-2"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Connected to Slack
-                  </div>
-                </div>
-              ) : (
-                <button
+  if (!user?.slack_user_id) {
+    return (
+      <div className="min-h-screen">
+        <Navbar user={user} currentPage="dashboard" />
+        <div className="p-8">
+          <div className="max-w-4xl mx-auto">
+            <Card>
+              <CardHeader>
+                <CardTitle>Connect Slack to View Analytics</CardTitle>
+                <CardDescription>
+                  Please connect your Slack account to view your activity
+                  analytics.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
                   onClick={() =>
                     (window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-slack`)
                   }
-                  className="flex items-center px-4 py-2 bg-[#4A154B] text-white rounded hover:bg-[#3e1240]"
                 >
-                  <svg
-                    className="w-5 h-5 mr-2"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M6 15a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0-6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-6 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4z" />
-                  </svg>
-                  Connect with Slack
-                </button>
-              )}
-            </div>
+                  Connect Slack
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-            {/* Google Calendar Connection */}
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold">
-                Google Calendar Connection
-              </h2>
-              {user?.google_calendar_connected ? (
-                <div className="space-y-4">
-                  <div className="flex items-center text-green-600">
-                    <svg
-                      className="w-5 h-5 mr-2"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Connected to Google Calendar
-                  </div>
-
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <h3 className="text-md font-medium mb-2">
-                      Calendar Activity
-                    </h3>
-                    <div className="space-y-2">
-                      <p className="text-sm text-gray-600">
-                        Your calendar activity and meeting patterns will be
-                        analyzed to help maintain work-life balance.
-                      </p>
-                      <ul className="list-disc list-inside text-sm text-gray-600">
-                        <li>Meeting frequency analysis</li>
-                        <li>Back-to-back meeting detection</li>
-                        <li>After-hours meeting tracking</li>
-                        <li>Meeting duration patterns</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() =>
-                    (window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-google`)
-                  }
-                  className="flex items-center px-4 py-2 bg-[#4285F4] text-white rounded hover:bg-[#3367D6]"
-                >
-                  <svg
-                    className="w-5 h-5 mr-2"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M12 0C5.383 0 0 5.383 0 12s5.383 12 12 12c2.424 0 4.761-.722 6.76-2.087l.034-.024-1.617-1.879-.027.017A9.494 9.494 0 0 1 12 21.54c-5.26 0-9.54-4.28-9.54-9.54 0-5.26 4.28-9.54 9.54-9.54 2.769 0 5.262 1.2 7.02 3.093l-3.017 3.017H24V.604l-3.028 3.028C18.951 1.651 15.684 0 12 0z" />
-                  </svg>
-                  Connect Google Calendar
-                </button>
-              )}
-            </div>
-
-            {/* GitHub Connection */}
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold">GitHub Connection</h2>
-              {user?.github_user_id ? (
-                <div className="space-y-4">
-                  <div className="flex items-center text-green-600">
-                    <svg
-                      className="w-5 h-5 mr-2"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Connected to GitHub ({user.github_username})
-                  </div>
-
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <h3 className="text-md font-medium mb-2">
-                      GitHub Activity
-                    </h3>
-                    <div className="space-y-2">
-                      <p className="text-sm text-gray-600">
-                        Your GitHub activity will be analyzed to help maintain
-                        work-life balance.
-                      </p>
-                      <ul className="list-disc list-inside text-sm text-gray-600">
-                        <li>Commit frequency analysis</li>
-                        <li>Code review patterns</li>
-                        <li>After-hours coding detection</li>
-                        <li>Project contribution metrics</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    if (user?.email) {
-                      window.location.href = `${
-                        process.env.NEXT_PUBLIC_BACKEND_URL
-                      }/connect-github?user_email=${encodeURIComponent(
-                        user.email
-                      )}`;
-                    } else {
-                      console.error("User email not found");
-                    }
-                  }}
-                  className="flex items-center px-4 py-2 bg-[#24292e] text-white rounded hover:bg-[#3a3f44]"
-                >
-                  <svg
-                    className="w-5 h-5 mr-2"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                  </svg>
-                  Connect GitHub
-                </button>
-              )}
-            </div>
-
-            {/* Work-Life Balance Section */}
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold">Work-Life Balance</h2>
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  We analyze your Slack communication patterns and calendar data
-                  to help you maintain a healthy work-life balance.
-                </p>
-                <div className="mt-4 flex items-center gap-4">
-                  <select
-                    value={daysToAnalyze}
-                    onChange={(e) => setDaysToAnalyze(Number(e.target.value))}
-                    className="block rounded-md border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:ring-indigo-500"
-                  >
-                    <option value={7}>Last 7 days</option>
-                    <option value={14}>Last 14 days</option>
-                    <option value={30}>Last 30 days</option>
-                    <option value={60}>Last 60 days</option>
-                    <option value={90}>Last 90 days</option>
-                  </select>
-                  <button
-                    onClick={() => sendNudgeMutation.mutate()}
-                    disabled={sendNudgeMutation.isPending}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-indigo-400"
-                  >
+  return (
+    <div className="min-h-screen">
+      <Navbar user={user} currentPage="dashboard" />
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-4">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    {daysToAnalyze} Days{" "}
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuLabel>Time Range</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => setDaysToAnalyze(7)}>
+                    Last 7 Days
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setDaysToAnalyze(14)}>
+                    Last 14 Days
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setDaysToAnalyze(30)}>
+                    Last 30 Days
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                onClick={() => sendNudgeMutation.mutate()}
+                disabled={sendNudgeMutation.isPending}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+              >
+                {sendNudgeMutation.isPending ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                     {analysisStatus}
-                  </button>
-                </div>
-              </div>
+                  </div>
+                ) : (
+                  <>
+                    <Slack className="mr-2 h-4 w-4" />
+                    {analysisStatus}
+                  </>
+                )}
+              </Button>
             </div>
           </div>
+
+          {activityLoading ? (
+            <div>Loading activity data...</div>
+          ) : (
+            <Tabs defaultValue="messages" className="space-y-4">
+              <TabsList>
+                <TabsTrigger value="messages">Message Activity</TabsTrigger>
+                <TabsTrigger value="responses">Response Patterns</TabsTrigger>
+                <TabsTrigger value="workHours">Work Hours</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="messages" className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Daily Messages</CardTitle>
+                      <CardDescription>Message count over time</CardDescription>
+                    </CardHeader>
+                    <CardContent className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={activityData?.messagesByDay}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" />
+                          <YAxis />
+                          <Tooltip />
+                          <Line
+                            type="monotone"
+                            dataKey="count"
+                            stroke="#8884d8"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Work Hours vs After Hours</CardTitle>
+                      <CardDescription>
+                        Message distribution by time
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={activityData?.workHoursVsAfterHours}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="messages" fill="#8884d8" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Channel Distribution</CardTitle>
+                      <CardDescription>Messages by channel</CardDescription>
+                    </CardHeader>
+                    <CardContent className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={activityData?.channelDistribution}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                            label
+                          >
+                            {activityData?.channelDistribution.map(
+                              (entry, index) => (
+                                <Cell
+                                  key={`cell-${index}`}
+                                  fill={COLORS[index % COLORS.length]}
+                                />
+                              )
+                            )}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="responses" className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Response Times by Hour</CardTitle>
+                      <CardDescription>
+                        Average response time throughout the day
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={activityData?.responseTimesByHour}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="hour" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="avgResponseTime" fill="#00C49F" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Weekday vs Weekend Activity</CardTitle>
+                      <CardDescription>
+                        Message patterns throughout the week
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={activityData?.weekdayVsWeekend}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="messages" fill="#FFBB28" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="workHours" className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Daily Active Hours</CardTitle>
+                    <CardDescription>
+                      Number of active hours per day
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={activityData?.dailyActiveHours}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis />
+                        <Tooltip />
+                        <Line
+                          type="monotone"
+                          dataKey="hours"
+                          stroke="#FF8042"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function MenuIcon() {
+  return <Menu className="h-6 w-6" />;
+}
+
+function GalleryVerticalEndIcon() {
+  return <GalleryVerticalEnd className="h-6 w-6" />;
 }

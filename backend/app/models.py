@@ -5,6 +5,7 @@ from datetime import datetime
 
 class UserResponse(BaseModel):
     email: EmailStr
+    name: str | None = None
     slack_user_id: str | None = None
     slack_team_id: str | None = None
 
@@ -21,12 +22,14 @@ class TokenData(BaseModel):
 
 class UserCreate(BaseModel):
     email: EmailStr
+    name: str | None = None
     password: str
 
 
 class UserDB(BaseModel):
     id: int
     email: str
+    name: str | None = None
     disabled: bool = False
     created_at: datetime
     slack_user_id: Optional[str] = None

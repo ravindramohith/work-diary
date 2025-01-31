@@ -14,6 +14,7 @@ import { setToken } from "@/utils/auth";
 interface LoginFormData {
   email: string;
   password: string;
+  name?: string;
 }
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL}`;
@@ -28,6 +29,7 @@ export function LoginForm({
   const [formData, setFormData] = useState<LoginFormData>({
     email: "",
     password: "",
+    name: "",
   });
 
   const handleAuthSuccess = (data: any) => {
@@ -89,7 +91,11 @@ export function LoginForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSignup) {
-      signupMutation.mutate(formData);
+      signupMutation.mutate({
+        email: formData.email,
+        password: formData.password,
+        name: formData.name,
+      });
     } else {
       loginMutation.mutate(formData);
     }
@@ -117,6 +123,21 @@ export function LoginForm({
         </p>
       </div>
       <div className="grid gap-6">
+        {isSignup && (
+          <div className="grid gap-2">
+            <Label htmlFor="name">Name</Label>
+            <Input
+              id="name"
+              type="text"
+              placeholder="John Doe"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, name: e.target.value }))
+              }
+              className="appearance-none"
+            />
+          </div>
+        )}
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
           <Input

@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Depends, APIRouter, HTTPException, status
+from fastapi import FastAPI, Depends, APIRouter, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
+from datetime import timedelta, datetime
 from app.database import get_db
 from .services.github import analyze_github_activity
 from .auth import (
@@ -10,7 +10,7 @@ from .auth import (
     get_current_user,
     get_password_hash,
 )
-from .security import encrypt_token
+from .security import encrypt_token, decrypt_token
 from .models import UserCreate, UserDB, Token
 from .services.slack import generate_slack_nudge
 from .services.calendar import (
@@ -24,9 +24,11 @@ from slack_sdk.oauth import AuthorizeUrlGenerator
 from fastapi.responses import RedirectResponse, HTMLResponse
 import httpx
 from anthropic import Anthropic
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, EmailStr
+from typing import Optional, Dict, Any, List
 from openai import OpenAI
+from collections import defaultdict
+import pytz
 
 app = FastAPI()
 
@@ -52,25 +54,73 @@ router = APIRouter()
 
 @router.post("/signup", response_model=UserDB)
 async def signup(user: UserCreate, db: asyncpg.Connection = Depends(get_db)):
-    existing_user = await db.fetchrow(
-        "SELECT * FROM users WHERE email = $1", user.email
-    )
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+    try:
+        # Check for existing user
+        existing_user = await db.fetchrow(
+            "SELECT * FROM users WHERE email = $1", user.email
         )
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered",
+            )
 
-    hashed_password = get_password_hash(user.password)
-    new_user = await db.fetchrow(
-        """
-        INSERT INTO users (email, hashed_password) 
-        VALUES ($1, $2)
-        RETURNING id, email, hashed_password, disabled, created_at
-        """,
-        user.email,
-        hashed_password,
-    )
-    return UserDB(**new_user)
+        # Hash password
+        try:
+            hashed_password = get_password_hash(user.password)
+        except Exception as e:
+            print(f"Password hashing error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error processing password",
+            )
+
+        # Insert new user
+        try:
+            new_user = await db.fetchrow(
+                """
+                INSERT INTO users (email, name, hashed_password) 
+                VALUES ($1, $2, $3)
+                RETURNING id, email, name, disabled, created_at, 
+                        slack_user_id, slack_team_id, google_calendar_connected,
+                        github_user_id, github_username
+                """,
+                user.email,
+                user.name,
+                hashed_password,
+            )
+        except Exception as e:
+            print(f"Database insertion error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error creating user in database",
+            )
+
+        if not new_user:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="User creation failed",
+            )
+
+        # Convert to UserDB model
+        try:
+            user_dict = dict(new_user)
+            return UserDB(**user_dict)
+        except Exception as e:
+            print(f"Model conversion error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error processing user data",
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Unexpected error during signup: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred, {str(e)}",
+        )
 
 
 @router.post("/login", response_model=Token)
@@ -95,7 +145,7 @@ async def login_for_access_token(
     # Get complete user info including slack details
     complete_user = await db.fetchrow(
         """
-        SELECT id, email, slack_user_id, slack_team_id 
+        SELECT id, email, name, slack_user_id, slack_team_id 
         FROM users WHERE email = $1
         """,
         user["email"],
@@ -106,6 +156,7 @@ async def login_for_access_token(
         "token_type": "bearer",
         "user": {
             "email": complete_user["email"],
+            "name": complete_user["name"],
             "slack_user_id": complete_user["slack_user_id"],
             "slack_team_id": complete_user["slack_team_id"],
         },
@@ -679,6 +730,278 @@ async def analyze_github(
     except Exception as e:
         print(f"Error analyzing GitHub activity: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class UserUpdate(BaseModel):
+    name: str | None = None
+    password: str | None = None
+
+
+@router.put("/users/me", response_model=UserDB)
+async def update_user(
+    user_update: UserUpdate,
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    try:
+        # Prepare update fields
+        update_fields = []
+        params = []
+        param_count = 1
+
+        if user_update.name is not None:
+            update_fields.append(f"name = ${param_count}")
+            params.append(user_update.name)
+            param_count += 1
+
+        if user_update.password is not None:
+            update_fields.append(f"hashed_password = ${param_count}")
+            params.append(get_password_hash(user_update.password))
+            param_count += 1
+
+        if not update_fields:
+            return current_user
+
+        # Add user ID as the last parameter
+        params.append(current_user.id)
+
+        # Update user information
+        updated_user = await db.fetchrow(
+            f"""
+            UPDATE users 
+            SET {", ".join(update_fields)}
+            WHERE id = ${param_count}
+            RETURNING id, email, name, disabled, created_at, 
+                    slack_user_id, slack_team_id, google_calendar_connected,
+                    github_user_id, github_username
+            """,
+            *params,
+        )
+
+        return UserDB(**dict(updated_user))
+    except Exception as e:
+        print(f"Error updating user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user",
+        )
+
+
+@router.post("/disconnect-slack")
+async def disconnect_slack(
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Disconnect Slack integration"""
+    try:
+        await db.execute(
+            """
+            UPDATE users 
+            SET 
+                slack_user_id = NULL,
+                slack_access_token = NULL,
+                slack_bot_token = NULL,
+                slack_team_id = NULL
+            WHERE id = $1
+            """,
+            current_user.id,
+        )
+        return {"status": "success", "message": "Slack disconnected successfully"}
+    except Exception as e:
+        print(f"Error disconnecting Slack: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to disconnect Slack",
+        )
+
+
+@router.post("/disconnect-google")
+async def disconnect_google(
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Disconnect Google Calendar integration"""
+    try:
+        await db.execute(
+            """
+            UPDATE users 
+            SET 
+                google_refresh_token = NULL,
+                google_calendar_connected = false
+            WHERE id = $1
+            """,
+            current_user.id,
+        )
+        return {
+            "status": "success",
+            "message": "Google Calendar disconnected successfully",
+        }
+    except Exception as e:
+        print(f"Error disconnecting Google Calendar: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to disconnect Google Calendar",
+        )
+
+
+@router.post("/disconnect-github")
+async def disconnect_github(
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Disconnect GitHub integration"""
+    try:
+        await db.execute(
+            """
+            UPDATE users 
+            SET 
+                github_user_id = NULL,
+                github_username = NULL,
+                github_access_token = NULL
+            WHERE id = $1
+            """,
+            current_user.id,
+        )
+        return {"status": "success", "message": "GitHub disconnected successfully"}
+    except Exception as e:
+        print(f"Error disconnecting GitHub: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to disconnect GitHub",
+        )
+
+
+@app.get("/slack/activity")
+async def get_slack_activity(
+    days: int = Query(default=7, ge=1, le=90),
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    if not current_user.slack_user_id:
+        raise HTTPException(status_code=400, detail="Slack account not connected")
+
+    try:
+        # Get encrypted tokens from database
+        tokens = await db.fetchrow(
+            "SELECT slack_access_token FROM users WHERE id = $1", current_user.id
+        )
+
+        if not tokens or not tokens["slack_access_token"]:
+            raise HTTPException(status_code=400, detail="Slack tokens not found")
+
+        # Initialize Slack client with user token instead of bot token
+        user_token = decrypt_token(tokens["slack_access_token"])
+        client = WebClient(token=user_token)
+
+        # Calculate the date range
+        end_date = datetime.now(pytz.UTC)
+        start_date = end_date - timedelta(days=days)
+
+        # Initialize data structures
+        messages_by_day = defaultdict(int)
+        work_hours_count = 0
+        after_hours_count = 0
+        channel_distribution = defaultdict(int)
+        weekday_count = 0
+        weekend_count = 0
+        daily_active_hours = defaultdict(set)
+
+        # Get list of all channels the user is part of
+        conversations_response = client.users_conversations(
+            user=current_user.slack_user_id,
+            types="public_channel,private_channel,mpim,im",
+            exclude_archived=True,
+            limit=1000,
+        )
+
+        for conv in conversations_response["channels"]:
+            try:
+                # Get messages from each channel
+                messages_response = client.conversations_history(
+                    channel=conv["id"],
+                    oldest=start_date.timestamp(),
+                    latest=end_date.timestamp(),
+                )
+
+                # Get channel name for context
+                channel_name = conv.get(
+                    "name", "DM" if conv.get("is_im") else "private-channel"
+                )
+
+                for msg in messages_response.get("messages", []):
+                    # Skip messages not from the current user
+                    if msg.get("user") != current_user.slack_user_id:
+                        continue
+
+                    # Convert timestamp to datetime
+                    msg_time = datetime.fromtimestamp(float(msg["ts"]), pytz.UTC)
+
+                    # Daily message count
+                    day = msg_time.date().isoformat()
+                    messages_by_day[day] += 1
+
+                    # Work hours vs after hours (9 AM - 5 PM considered work hours)
+                    hour = msg_time.hour
+                    if 9 <= hour <= 17:
+                        work_hours_count += 1
+                    else:
+                        after_hours_count += 1
+
+                    # Channel distribution
+                    channel_distribution[channel_name] += 1
+
+                    # Weekday vs weekend
+                    if msg_time.weekday() < 5:
+                        weekday_count += 1
+                    else:
+                        weekend_count += 1
+
+                    # Daily active hours
+                    daily_active_hours[day].add(hour)
+
+            except Exception as e:
+                print(f"Error fetching messages from channel {channel_name}: {str(e)}")
+                continue
+
+        # Format the response data
+        response = {
+            "messagesByDay": [
+                {"date": date, "count": count}
+                for date, count in sorted(messages_by_day.items())
+            ],
+            "workHoursVsAfterHours": [
+                {"name": "Work Hours (9-5)", "messages": work_hours_count},
+                {"name": "After Hours", "messages": after_hours_count},
+            ],
+            "channelDistribution": [
+                {"name": channel, "value": count}
+                for channel, count in sorted(
+                    channel_distribution.items(), key=lambda x: x[1], reverse=True
+                )[
+                    :5
+                ]  # Top 5 channels
+            ],
+            "responseTimesByHour": [
+                {"hour": hour, "avgResponseTime": 15}  # Default 15 min response time
+                for hour in range(24)
+            ],
+            "weekdayVsWeekend": [
+                {"name": "Weekdays", "messages": weekday_count},
+                {"name": "Weekends", "messages": weekend_count},
+            ],
+            "dailyActiveHours": [
+                {"date": date, "hours": len(hours)}
+                for date, hours in sorted(daily_active_hours.items())
+            ],
+        }
+
+        return response
+
+    except Exception as e:
+        print(f"Error fetching Slack activity: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch Slack activity: {str(e)}"
+        )
 
 
 app.include_router(router)
