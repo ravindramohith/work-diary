@@ -421,35 +421,74 @@ async def send_combined_nudge(
             response_format={"type": "json_object"},
             messages=[
                 {
+                    "role": "system",
+                    "content": """You are a work-life balance analyst. Your responses should:
+                    1. Include specific numbers and percentages from the data
+                    2. Provide actionable, measurable suggestions
+                    3. Be encouraging and supportive
+                    4. Use emojis appropriately
+                    5. End with a motivational sign-off message
+                    
+                    When analyzing patterns:
+                    - Provide 3-6 detailed key patterns based on available data
+                    - Focus on time-based patterns (peak hours, quiet periods)
+                    - Include communication style metrics (response times, thread engagement)
+                    - Highlight collaboration patterns (team interactions, cross-channel activity)
+                    - If Calendar/GitHub is missing, provide more detailed Slack insights instead
+                    - Each pattern should be data-rich with specific numbers and percentages""",
+                },
+                {
                     "role": "user",
                     "content": f"""
                     Based on the following analyses, generate a structured work-life balance analysis in JSON format.
-                    The format should follow this exact structure:
+                    The format should follow this exact structure, with emphasis on data-driven insights:
                     {{
                         "greeting": "Hi [Name]! 👋",
                         "key_patterns": [
-                            "pattern1",
-                            "pattern2",
-                            "pattern3"
+                            // Provide 3-6 of the most relevant patterns from below based on available data:
+
+                            // Core Slack Patterns (Always include at least 2):
+                            "Communication Peak: [X%] of your Slack activity occurs between [specific time]-[specific time], with [Y] messages per hour during this period",
+                            "Message Distribution: [X] messages per day, with [Y%] in public channels and [Z%] in direct messages",
+                            "Response Behavior: Average response time of [X] minutes, with [Y%] of responses within 5 minutes",
+                            "Thread Engagement: [X] thread participations with [Y] average replies, [Z%] leading to meaningful discussions",
+
+                            // If Calendar is connected:
+                            "Meeting Load: [X] meetings per week, averaging [Y] minutes each, with [Z%] during peak productivity hours",
+                            "Meeting Patterns: [X%] of meetings are recurring, [Y%] are one-on-ones, with [Z] hours of focus time between meetings",
+
+                            // If GitHub is connected:
+                            "Code Activity: [X] commits and [Y] PR reviews across [Z] repositories, with [W%] during core hours",
+                            "Collaboration Style: [X] comments per PR, [Y] reviews requested, average review time of [Z] hours",
+
+                            // Additional Slack Insights (use if other services not connected):
+                            "Channel Activity: Most active in [X] channels with [Y] messages per day in each",
+                            "Team Interaction: Connected with [X] team members across [Y] channels, [Z] average interactions per day",
+                            "Focus Periods: [X] uninterrupted work blocks of [Y] minutes on average",
+                            "After-hours Pattern: [X%] of activity outside core hours, primarily between [time] and [time]"
                         ],
                         "working_well": [
-                            "point1",
-                            "point2",
-                            "point3"
+                            "point1 with specific metrics and time references",
+                            "point2 with specific metrics and time references",
+                            "point3 with specific metrics and time references"
                         ],
                         "opportunity_areas": [
-                            "area1",
-                            "area2",
-                            "area3"
+                            "specific suggestion 1 with target numbers and timeframes",
+                            "specific suggestion 2 with target numbers and timeframes",
+                            "specific suggestion 3 with target numbers and timeframes"
                         ],
                         "weekly_goal": {{
-                            "title": "Try this approach next week:",
+                            "title": "Your data-driven goals for next week:",
                             "steps": [
-                                "step1",
-                                "step2",
-                                "step3"
+                                "Measurable goal 1 with specific target numbers and timeline",
+                                "Measurable goal 2 with specific target numbers and timeline",
+                                "Measurable goal 3 with specific target numbers and timeline"
                             ]
-                        }}
+                        }},
+                        "sign_off": "Choose one of these styles with a relevant emoji:
+                            1. 'Remember: Your [X%] response rate during [specific time] shows you're on the right track! Keep it up! ⭐'
+                            2. 'Small adjustments to your [specific pattern with numbers] can make a big difference. You've got this! 🌟'
+                            3. 'You're already showing great progress with [specific metric] increasing by [X%]. Let's build on that! 💪'"
                     }}
 
                     Analyses to consider:
@@ -458,17 +497,22 @@ async def send_combined_nudge(
                     GitHub Analysis: {analyses.github_analysis if analyses.github_analysis else github_placeholder}
 
                     Important Notes:
-                    1. If Calendar data is missing, suggest connecting Google Calendar for better meeting insights
-                    2. If GitHub data is missing, suggest connecting GitHub for code activity tracking
-                    3. Focus primarily on available Slack data for communication patterns
-                    4. Make suggestions based on available data only
-                    5. Include connection suggestions in opportunity_areas if services are not connected
+                    1. ALWAYS include specific numbers, percentages, and times in every point
+                    2. If Calendar/GitHub data is missing, provide more detailed Slack insights instead
+                    3. Focus on patterns that show both positive trends and areas for improvement
+                    4. Include at least one collaboration metric in key patterns
+                    5. All time references must use "X:XX AM/PM" format
+                    6. When a service is not connected, do not mention its absence in key patterns
+                    7. Use Slack data to provide rich insights about work patterns even when other services are missing
+                    8. Include specific time ranges and peak activity periods
+                    9. Highlight team collaboration metrics from available data
+                    10. Focus on actionable patterns that can influence work-life balance
 
                     Make each point concise, actionable, and specific to the user's actual data.
                     Focus on work-life balance, productivity, and well-being.
                     Use emoji in the text where appropriate.
                     """,
-                }
+                },
             ],
         )
 
@@ -490,6 +534,8 @@ async def send_combined_nudge(
 
 🎯 *{analysis_dict['weekly_goal']['title']}*
 {chr(10).join(f"• {step}" for step in analysis_dict['weekly_goal']['steps'])}
+
+{analysis_dict['sign_off']}
 """
 
         # Send the formatted message via Slack
