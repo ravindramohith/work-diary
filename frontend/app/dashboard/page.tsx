@@ -1,34 +1,129 @@
 "use client";
 
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { authenticatedFetch, removeToken } from "../utils/auth";
+import {
+  authenticatedRequest,
+  removeToken,
+  checkAuth,
+  getToken,
+} from "../../utils/auth";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import axios from "axios";
+import { toast } from "react-hot-toast";
 
 export default function Dashboard() {
   const router = useRouter();
 
   const { data: user, isLoading } = useQuery({
     queryKey: ["user"],
-    queryFn: async () => {
-      const response = await authenticatedFetch(
-        "https://localhost:8000/users/me"
-      );
-      if (!response.ok) throw new Error("Failed to fetch user");
-      return response.json();
-    },
+    queryFn: checkAuth,
   });
 
-  const sendNudgeMutation = useMutation({
-    mutationFn: async () => {
-      const response = await authenticatedFetch(
-        "https://localhost:8000/slack/send-nudge",
+  const [analysisStatus, setAnalysisStatus] = useState("Send me a nudge");
+  const [daysToAnalyze, setDaysToAnalyze] = useState(7);
+
+  const handleSendNudge = async () => {
+    try {
+      // Check if Slack is connected
+      if (!user?.slack_user_id) {
+        toast.error("Please connect your Slack account to receive nudges!");
+        return;
+      }
+
+      const token = getToken();
+      let slackResponse, calendarResponse, githubResponse;
+
+      // Always analyze Slack as it's required
+      setAnalysisStatus("Analyzing Slack...");
+      try {
+        slackResponse = await axios.post(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/slack/analyze`,
+          { days: daysToAnalyze },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      } catch (error) {
+        toast.error("Failed to analyze Slack activity");
+        setAnalysisStatus("Send me a nudge");
+        return;
+      }
+
+      // Only analyze Calendar if connected
+      if (user?.google_calendar_connected) {
+        setAnalysisStatus("Analyzing Calendar...");
+        try {
+          calendarResponse = await axios.post(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/calendar/analyze`,
+            { days: daysToAnalyze },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+        } catch (error) {
+          console.error("Calendar analysis failed:", error);
+          toast.error("Failed to analyze Calendar activity");
+        }
+      }
+
+      // Only analyze GitHub if connected
+      if (user?.github_user_id) {
+        setAnalysisStatus("Analyzing GitHub...");
+        try {
+          githubResponse = await axios.post(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/github/analyze`,
+            { days: daysToAnalyze },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+        } catch (error) {
+          console.error("GitHub analysis failed:", error);
+          toast.error("Failed to analyze GitHub activity");
+        }
+      }
+
+      setAnalysisStatus("Hold up, almost done...");
+      const nudgeResponse = await axios.post(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/slack/send-combined-nudge`,
         {
-          method: "POST",
+          slack_analysis: slackResponse?.data,
+          calendar_analysis: calendarResponse?.data,
+          github_analysis: githubResponse?.data,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
         }
       );
-      if (!response.ok) throw new Error("Failed to send nudge");
-      return response.json();
-    },
+
+      setAnalysisStatus("Sent successfully!");
+      toast.success("Nudge sent successfully! Check your Slack.");
+      setTimeout(() => setAnalysisStatus("Send me a nudge"), 3000);
+      return nudgeResponse.data;
+    } catch (error) {
+      console.error("Error sending nudge:", error);
+      setAnalysisStatus("Failed to send nudge");
+      toast.error("Failed to send nudge. Please try again.");
+      setTimeout(() => setAnalysisStatus("Send me a nudge"), 3000);
+      throw error;
+    }
+  };
+
+  const sendNudgeMutation = useMutation({
+    mutationFn: handleSendNudge,
   });
 
   const handleLogout = () => {
@@ -80,8 +175,7 @@ export default function Dashboard() {
               ) : (
                 <button
                   onClick={() =>
-                    (window.location.href =
-                      "https://localhost:8000/connect-slack")
+                    (window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-slack`)
                   }
                   className="flex items-center px-4 py-2 bg-[#4A154B] text-white rounded hover:bg-[#3e1240]"
                 >
@@ -140,8 +234,7 @@ export default function Dashboard() {
               ) : (
                 <button
                   onClick={() =>
-                    (window.location.href =
-                      "https://localhost:8000/connect-google")
+                    (window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-google`)
                   }
                   className="flex items-center px-4 py-2 bg-[#4285F4] text-white rounded hover:bg-[#3367D6]"
                 >
@@ -199,7 +292,9 @@ export default function Dashboard() {
                 <button
                   onClick={() => {
                     if (user?.email) {
-                      window.location.href = `https://localhost:8000/connect-github?user_email=${encodeURIComponent(
+                      window.location.href = `${
+                        process.env.NEXT_PUBLIC_BACKEND_URL
+                      }/connect-github?user_email=${encodeURIComponent(
                         user.email
                       )}`;
                     } else {
@@ -228,25 +323,26 @@ export default function Dashboard() {
                   We analyze your Slack communication patterns and calendar data
                   to help you maintain a healthy work-life balance.
                 </p>
-                <button
-                  onClick={() => sendNudgeMutation.mutate()}
-                  disabled={sendNudgeMutation.isPending}
-                  className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-indigo-400"
-                >
-                  {sendNudgeMutation.status === "pending"
-                    ? "Sending..."
-                    : "Send me a nudge"}
-                </button>
-                {sendNudgeMutation.status === "error" && (
-                  <p className="mt-2 text-red-600">
-                    Failed to send nudge. Please try again.
-                  </p>
-                )}
-                {sendNudgeMutation.isSuccess && (
-                  <p className="mt-2 text-green-600">
-                    Nudge sent successfully!
-                  </p>
-                )}
+                <div className="mt-4 flex items-center gap-4">
+                  <select
+                    value={daysToAnalyze}
+                    onChange={(e) => setDaysToAnalyze(Number(e.target.value))}
+                    className="block rounded-md border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:ring-indigo-500"
+                  >
+                    <option value={7}>Last 7 days</option>
+                    <option value={14}>Last 14 days</option>
+                    <option value={30}>Last 30 days</option>
+                    <option value={60}>Last 60 days</option>
+                    <option value={90}>Last 90 days</option>
+                  </select>
+                  <button
+                    onClick={() => sendNudgeMutation.mutate()}
+                    disabled={sendNudgeMutation.isPending}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-indigo-400"
+                  >
+                    {analysisStatus}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -1,13 +1,13 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import httpx
 from anthropic import Anthropic
 from openai import OpenAI
 from ..security import decrypt_token
 
 
-async def analyze_github_activity(user_id: int, db):
-    """Analyze GitHub activity for the past 7 days using AI"""
+async def analyze_github_activity(user_id: int, db, days: int = 7):
+    """Analyze GitHub activity for the specified number of days using AI"""
     # Get user's GitHub token
     github_data = await db.fetchrow(
         """
@@ -25,8 +25,8 @@ async def analyze_github_activity(user_id: int, db):
     username = github_data["github_username"]
 
     # Calculate date range
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=7)
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days)
 
     async with httpx.AsyncClient() as client:
         # Get user's events
@@ -38,16 +38,6 @@ async def analyze_github_activity(user_id: int, db):
             },
         )
         events = events_response.json()
-
-        # Get user's repositories
-        repos_response = await client.get(
-            f"https://api.github.com/users/{username}/repos",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github.v3+json",
-            },
-        )
-        repos = repos_response.json()
 
         # Collect activity stats
         activity_stats = {
@@ -61,8 +51,16 @@ async def analyze_github_activity(user_id: int, db):
             "event_details": [],
         }
 
+        # Set timezone to IST
+        ist = timezone(timedelta(hours=5, minutes=30))
+
         for event in events:
-            event_date = datetime.strptime(event["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+            # Convert event time to IST
+            event_utc = datetime.strptime(
+                event["created_at"], "%Y-%m-%dT%H:%M:%SZ"
+            ).replace(tzinfo=timezone.utc)
+            event_date = event_utc.astimezone(ist)
+
             if start_date <= event_date <= end_date:
                 event_type = event["type"]
                 day = event_date.strftime("%Y-%m-%d")
@@ -96,15 +94,38 @@ async def analyze_github_activity(user_id: int, db):
                 ]:
                     activity_stats["comment_count"] += 1
 
-                # Store event details for AI analysis
-                activity_stats["event_details"].append(
-                    {
-                        "type": event_type,
-                        "repo": event["repo"]["name"],
-                        "created_at": event_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "payload": event.get("payload", {}),
-                    }
-                )
+                # Store event details for AI analysis with IST time
+                event_details = {
+                    "type": event_type,
+                    "repo": event["repo"]["name"],
+                    "created_at": event_date.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+
+                # Add minimal essential payload info based on event type
+                if event_type == "PushEvent":
+                    event_details["commit_count"] = len(
+                        event["payload"].get("commits", [])
+                    )
+                    if event["payload"].get("commits"):
+                        event_details["commit_message"] = event["payload"]["commits"][
+                            0
+                        ].get("message", "")
+                elif event_type == "PullRequestEvent":
+                    pr_payload = event["payload"].get("pull_request", {})
+                    event_details["action"] = event["payload"].get("action")
+                    event_details["title"] = pr_payload.get("title")
+                elif event_type == "IssuesEvent":
+                    event_details["action"] = event["payload"].get("action")
+                    event_details["title"] = (
+                        event["payload"].get("issue", {}).get("title")
+                    )
+                elif event_type in [
+                    "IssueCommentEvent",
+                    "PullRequestReviewCommentEvent",
+                ]:
+                    event_details["action"] = event["payload"].get("action")
+
+                activity_stats["event_details"].append(event_details)
 
         # Convert active_repos to list for JSON serialization
         activity_stats["active_repos"] = list(activity_stats["active_repos"])
@@ -120,7 +141,7 @@ async def analyze_github_activity(user_id: int, db):
                     "content": f"""
                 Analyze these GitHub activity patterns for potential burnout risk and work-life balance:
                 
-                Past 7 days activity:
+                Past {days} days activity:
                 - Total commits: {activity_stats['commit_count']}
                 - Pull requests: {activity_stats['pr_count']}
                 - Code reviews: {activity_stats['review_count']}
@@ -143,7 +164,7 @@ async def analyze_github_activity(user_id: int, db):
         # Use OpenAI to analyze code complexity and quality trends
         openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         code_analysis = openai.chat.completions.create(
-            model="gpt-4-turbo-preview",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",

@@ -23,13 +23,17 @@ from slack_sdk import WebClient
 from slack_sdk.oauth import AuthorizeUrlGenerator
 from fastapi.responses import RedirectResponse, HTMLResponse
 import httpx
+from anthropic import Anthropic
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+from openai import OpenAI
 
 app = FastAPI()
 
-# CORS for Next.js frontend
+# Update CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[f"{os.getenv('FRONTEND_URL')}"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -118,8 +122,8 @@ slack_client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
 
 # Slack OAuth endpoints
-SLACK_REDIRECT_URI = "https://0.0.0.0:8000/slack-callback"
-FRONTEND_SUCCESS_URI = "http://localhost:3000/dashboard"
+SLACK_REDIRECT_URI = f"{os.getenv('BACKEND_URL')}/slack-callback"
+FRONTEND_SUCCESS_URI = f"{os.getenv('FRONTEND_URL')}/dashboard"
 
 
 # Define all required Slack scopes
@@ -219,18 +223,24 @@ async def slack_callback(
         return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error={str(e)}")
 
 
-@router.post("/slack/send-nudge")
-async def send_slack_nudge(
+class AnalysisRequest(BaseModel):
+    days: Optional[int] = 7
+
+
+@router.post("/slack/analyze")
+async def analyze_slack(
+    request: AnalysisRequest,
     current_user: UserDB = Depends(get_current_user),
     db: asyncpg.Connection = Depends(get_db),
 ):
+    """Analyze Slack activity"""
     try:
-        # Generate and send message
-        nudge = await generate_slack_nudge(current_user.id, db)
-        slack_client.chat_postMessage(channel=current_user.slack_user_id, text=nudge)
-        return {"status": "Nudge sent!"}
+        from .services.slack import analyze_slack_activity
+
+        analysis = await analyze_slack_activity(current_user.id, db, request.days)
+        return analysis
     except Exception as e:
-        print(f"Error sending nudge: {str(e)}")
+        print(f"Error analyzing Slack activity: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -348,6 +358,159 @@ async def google_callback(
         return RedirectResponse(f"{FRONTEND_SUCCESS_URI}?error=oauth_failed")
 
 
+@router.post("/calendar/analyze")
+async def analyze_calendar(
+    request: AnalysisRequest,
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Analyze Calendar activity"""
+    try:
+        analysis = await analyze_calendar_activity(current_user.id, db, request.days)
+        return analysis
+    except Exception as e:
+        print(f"Error analyzing Calendar activity: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AnalysesRequest(BaseModel):
+    slack_analysis: Dict[str, Any]  # Required
+    calendar_analysis: Optional[Dict[str, Any]] = None  # Optional with default None
+    github_analysis: Optional[Dict[str, Any]] = None  # Optional with default None
+
+
+@router.post("/slack/send-combined-nudge")
+async def send_combined_nudge(
+    analyses: AnalysesRequest,
+    current_user: UserDB = Depends(get_current_user),
+    db: asyncpg.Connection = Depends(get_db),
+):
+    """Generate and send a combined nudge based on all analyses"""
+    try:
+        if not analyses.slack_analysis:
+            raise HTTPException(
+                status_code=400,
+                detail="Slack analysis is required. Please connect your Slack account.",
+            )
+
+        # Add placeholder data for missing analyses
+        calendar_placeholder = {
+            "total_meetings": 0,
+            "meetings_after_hours": 0,
+            "early_meetings": 0,
+            "back_to_back_meetings": 0,
+            "message": "No calendar data available. Consider connecting your Google Calendar for better insights!",
+        }
+
+        github_placeholder = {
+            "stats": {
+                "commit_count": 0,
+                "pr_count": 0,
+                "review_count": 0,
+                "issue_count": 0,
+                "comment_count": 0,
+                "active_repos": [],
+            },
+            "message": "No GitHub data available. Consider connecting your GitHub account for code activity insights!",
+        }
+
+        # Use OpenAI to generate a structured combined analysis
+        openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        combined_analysis = openai.chat.completions.create(
+            model="gpt-4o",
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""
+                    Based on the following analyses, generate a structured work-life balance analysis in JSON format.
+                    The format should follow this exact structure:
+                    {{
+                        "greeting": "Hi [Name]! 👋",
+                        "key_patterns": [
+                            "pattern1",
+                            "pattern2",
+                            "pattern3"
+                        ],
+                        "working_well": [
+                            "point1",
+                            "point2",
+                            "point3"
+                        ],
+                        "opportunity_areas": [
+                            "area1",
+                            "area2",
+                            "area3"
+                        ],
+                        "weekly_goal": {{
+                            "title": "Try this approach next week:",
+                            "steps": [
+                                "step1",
+                                "step2",
+                                "step3"
+                            ]
+                        }}
+                    }}
+
+                    Analyses to consider:
+                    Slack Analysis: {analyses.slack_analysis}
+                    Calendar Analysis: {analyses.calendar_analysis if analyses.calendar_analysis else calendar_placeholder}
+                    GitHub Analysis: {analyses.github_analysis if analyses.github_analysis else github_placeholder}
+
+                    Important Notes:
+                    1. If Calendar data is missing, suggest connecting Google Calendar for better meeting insights
+                    2. If GitHub data is missing, suggest connecting GitHub for code activity tracking
+                    3. Focus primarily on available Slack data for communication patterns
+                    4. Make suggestions based on available data only
+                    5. Include connection suggestions in opportunity_areas if services are not connected
+
+                    Make each point concise, actionable, and specific to the user's actual data.
+                    Focus on work-life balance, productivity, and well-being.
+                    Use emoji in the text where appropriate.
+                    """,
+                }
+            ],
+        )
+
+        structured_analysis = combined_analysis.choices[0].message.content
+
+        # Format a user-friendly Slack message from the structured analysis
+        analysis_dict = eval(structured_analysis)  # Convert JSON string to dict
+        slack_message = f"""
+{analysis_dict['greeting']}
+
+📊 *Key Patterns:*
+{chr(10).join(f"• {pattern}" for pattern in analysis_dict['key_patterns'])}
+
+✨ *What's Working Well:*
+{chr(10).join(f"• {point}" for point in analysis_dict['working_well'])}
+
+💡 *Opportunity Areas:*
+{chr(10).join(f"{i+1}. {area}" for i, area in enumerate(analysis_dict['opportunity_areas']))}
+
+🎯 *{analysis_dict['weekly_goal']['title']}*
+{chr(10).join(f"• {step}" for step in analysis_dict['weekly_goal']['steps'])}
+"""
+
+        # Send the formatted message via Slack
+        slack_client.chat_postMessage(
+            channel=current_user.slack_user_id, text=slack_message, parse="full"
+        )
+
+        return {
+            "status": "Nudge sent successfully!",
+            "analysis": analysis_dict,
+            "services_connected": {
+                "slack": True,
+                "calendar": bool(analyses.calendar_analysis),
+                "github": bool(analyses.github_analysis),
+            },
+        }
+    except Exception as e:
+        print(f"Error sending combined nudge: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Define GitHub scopes
 GITHUB_SCOPES = [
     "repo",
@@ -358,7 +521,7 @@ GITHUB_SCOPES = [
     "read:project",
 ]
 
-GITHUB_REDIRECT_URI = "https://localhost:8000/github-callback"
+GITHUB_REDIRECT_URI = "https://work-diary-backend.vercel.app/github-callback"
 
 
 @router.get("/connect-github")
@@ -459,12 +622,13 @@ async def github_callback(
 
 @router.post("/github/analyze")
 async def analyze_github(
+    request: AnalysisRequest,
     current_user: UserDB = Depends(get_current_user),
     db: asyncpg.Connection = Depends(get_db),
 ):
     """Analyze GitHub activity"""
     try:
-        analysis = await analyze_github_activity(current_user.id, db)
+        analysis = await analyze_github_activity(current_user.id, db, request.days)
         return analysis
     except Exception as e:
         print(f"Error analyzing GitHub activity: {str(e)}")
@@ -473,14 +637,14 @@ async def analyze_github(
 
 app.include_router(router)
 
-if __name__ == "__main__":
-    import uvicorn
+# if __name__ == "__main__":
+#     import uvicorn
 
-    uvicorn.run(
-        "app.main:app",
-        host="localhost",
-        port=8000,
-        ssl_keyfile="certs/key.pem",
-        ssl_certfile="certs/cert.pem",
-        reload=True,
-    )
+#     uvicorn.run(
+#         "app.main:app",
+#         host="localhost",
+#         port=8000,
+#         ssl_keyfile="certs/key.pem",
+#         ssl_certfile="certs/cert.pem",
+#         reload=True,
+#     )

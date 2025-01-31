@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { getToken, authenticatedFetch } from "./utils/auth";
+import { getToken, checkAuth } from "../utils/auth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -12,21 +12,7 @@ export default function Home() {
   // Check authentication status
   const { data: user, isLoading } = useQuery({
     queryKey: ["user"],
-    queryFn: async () => {
-      const token = getToken();
-      if (!token) {
-        router.push("/auth");
-        return null;
-      }
-      const response = await authenticatedFetch(
-        "https://localhost:8000/users/me"
-      );
-      if (!response.ok) {
-        router.push("/auth");
-        return null;
-      }
-      return response.json();
-    },
+    queryFn: checkAuth,
   });
 
   useEffect(() => {
@@ -44,7 +30,7 @@ export default function Home() {
   }, [user, isLoading, router]);
 
   const handleGitHubConnect = () => {
-    window.location.href = "https://localhost:8000/connect-github";
+    window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-github`;
   };
 
   // Show loading state while checking auth
@@ -70,8 +56,7 @@ export default function Home() {
             <div className="space-y-4">
               <Button
                 onClick={() =>
-                  (window.location.href =
-                    "https://localhost:8000/connect-slack")
+                  (window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-slack`)
                 }
                 className="w-full bg-[#4A154B] hover:bg-[#611f64]"
               >
@@ -80,8 +65,7 @@ export default function Home() {
 
               <Button
                 onClick={() =>
-                  (window.location.href =
-                    "https://localhost:8000/connect-google")
+                  (window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-google`)
                 }
                 className="w-full bg-[#4285F4] hover:bg-[#357ABD]"
               >

@@ -1,6 +1,6 @@
 import os, asyncpg
 from slack_sdk import WebClient
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ..security import decrypt_token
 from openai import OpenAI
 from anthropic import Anthropic
@@ -8,7 +8,7 @@ from .calendar import analyze_calendar_activity
 from .github import analyze_github_activity
 
 
-async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
+async def analyze_slack_activity(user_id: int, db: asyncpg.Connection, days: int = 7):
     """Fetch and analyze user's Slack activity in real-time"""
     user = await db.fetchrow(
         """
@@ -79,8 +79,8 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
         daily_messages = {}  # Format: {'YYYY-MM-DD': [messages]}
         channel_messages_content = {}  # Format: {'channel_name': [messages]}
 
-        # Last 7 days timestamp
-        week_ago = (datetime.now() - timedelta(days=7)).timestamp()
+        # Last N days timestamp
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
 
         # Analyze each conversation
         for conv in conversations["channels"]:
@@ -167,7 +167,14 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
 
                 # Analyze message timing and content
                 for msg in user_messages:
-                    msg_datetime = datetime.fromtimestamp(float(msg["ts"]))
+                    # Convert Slack timestamp to UTC first
+                    utc_datetime = datetime.fromtimestamp(
+                        float(msg["ts"]), tz=timezone.utc
+                    )
+                    # Convert to IST (or your desired timezone)
+                    ist = timezone(timedelta(hours=5, minutes=30))  # IST is UTC+5:30
+                    msg_datetime = utc_datetime.astimezone(ist)
+
                     msg_text = msg.get("text", "")
 
                     # Update daily breakdown
@@ -188,7 +195,7 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection):
                         channel_messages_content[channel_name] = []
                     channel_messages_content[channel_name].append(msg_text)
 
-                    # Count after-hours messages
+                    # Count after-hours messages (using local time)
                     if not (9 <= msg_datetime.hour < 17):
                         after_hours_messages += 1
 
@@ -315,21 +322,21 @@ async def generate_slack_nudge(user_id: int, db: asyncpg.Connection) -> str:
             print(f"Error getting Slack analysis: {e}")
             slack_data = None
 
-        # Get calendar analysis
-        calendar_analysis = None
-        try:
-            calendar_analysis = await analyze_calendar_activity(user_id, db)
-        except Exception as e:
-            print(f"Error getting calendar analysis: {e}")
-            calendar_analysis = None
+        # # Get calendar analysis
+        # calendar_analysis = None
+        # try:
+        #     calendar_analysis = await analyze_calendar_activity(user_id, db)
+        # except Exception as e:
+        #     print(f"Error getting calendar analysis: {e}")
+        #     calendar_analysis = None
 
-        # Get GitHub analysis
-        github_analysis = None
-        try:
-            github_analysis = await analyze_github_activity(user_id, db)
-        except Exception as e:
-            print(f"Error getting GitHub analysis: {e}")
-            github_analysis = None
+        # # Get GitHub analysis
+        # github_analysis = None
+        # try:
+        #     github_analysis = await analyze_github_activity(user_id, db)
+        # except Exception as e:
+        #     print(f"Error getting GitHub analysis: {e}")
+        #     github_analysis = None
 
         # Prepare the combined analysis for AI
         anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))

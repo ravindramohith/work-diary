@@ -1,7 +1,7 @@
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import asyncpg
 from ..security import decrypt_token
@@ -17,7 +17,7 @@ SCOPES = [
 ]
 
 # OAuth 2.0 redirect URI
-GOOGLE_REDIRECT_URI = "https://localhost:8000/google-callback"
+GOOGLE_REDIRECT_URI = "https://work-diary-backend.vercel.app/google-callback"
 
 
 def create_oauth_flow():
@@ -31,7 +31,10 @@ def create_oauth_flow():
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
             "redirect_uris": [GOOGLE_REDIRECT_URI],
-            "javascript_origins": ["https://localhost:8000", "http://localhost:3000"],
+            "javascript_origins": [
+                os.getenv("BACKEND_URL"),
+                os.getenv("FRONTEND_URL"),
+            ],
         }
     }
 
@@ -69,15 +72,17 @@ async def get_calendar_service(user_id: int, db: asyncpg.Connection):
     return build("calendar", "v3", credentials=creds)
 
 
-async def analyze_calendar_activity(user_id: int, db: asyncpg.Connection):
-    """Analyze user's calendar activity for the past 7 days"""
+async def analyze_calendar_activity(
+    user_id: int, db: asyncpg.Connection, days: int = 7
+):
+    """Analyze user's calendar activity for the specified number of days"""
     try:
         service = await get_calendar_service(user_id, db)
 
-        # Get events from the last 7 days
-        now = datetime.utcnow()
-        start_time = (now - timedelta(days=7)).isoformat() + "Z"
-        end_time = now.isoformat() + "Z"
+        # Get events from the last N days in UTC
+        now = datetime.now(timezone.utc)
+        start_time = (now - timedelta(days=days)).isoformat()
+        end_time = now.isoformat()
 
         events_result = (
             service.events()
@@ -92,6 +97,9 @@ async def analyze_calendar_activity(user_id: int, db: asyncpg.Connection):
         )
 
         events = events_result.get("items", [])
+
+        # Set timezone to IST
+        ist = timezone(timedelta(hours=5, minutes=30))
 
         # Analyze calendar data
         calendar_stats = {
@@ -126,12 +134,16 @@ async def analyze_calendar_activity(user_id: int, db: asyncpg.Connection):
             ):
                 continue
 
-            start = datetime.fromisoformat(
+            # Convert to UTC first, then to IST
+            start_utc = datetime.fromisoformat(
                 event["start"]["dateTime"].replace("Z", "+00:00")
-            )
-            end = datetime.fromisoformat(
+            ).replace(tzinfo=timezone.utc)
+            end_utc = datetime.fromisoformat(
                 event["end"]["dateTime"].replace("Z", "+00:00")
-            )
+            ).replace(tzinfo=timezone.utc)
+
+            start = start_utc.astimezone(ist)
+            end = end_utc.astimezone(ist)
 
             # Track daily counts
             day_key = start.strftime("%Y-%m-%d")
@@ -173,11 +185,11 @@ async def analyze_calendar_activity(user_id: int, db: asyncpg.Connection):
                 calendar_stats["longest_meeting_duration"], duration
             )
 
-            # Check if meeting is after hours (after 5 PM)
+            # Check if meeting is after hours (after 5 PM IST)
             if start.hour >= 17:
                 calendar_stats["meetings_after_hours"] += 1
 
-            # Check if meeting is early (before 9 AM)
+            # Check if meeting is early (before 9 AM IST)
             if start.hour < 9:
                 calendar_stats["early_meetings"] += 1
 
@@ -203,7 +215,7 @@ async def analyze_calendar_activity(user_id: int, db: asyncpg.Connection):
                 calendar_stats["total_duration_minutes"]
                 / calendar_stats["total_meetings"]
             )
-            calendar_stats["meetings_per_day"] = calendar_stats["total_meetings"] / 7
+            calendar_stats["meetings_per_day"] = calendar_stats["total_meetings"] / days
 
         # Use Anthropic for calendar pattern analysis
         anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -214,7 +226,7 @@ async def analyze_calendar_activity(user_id: int, db: asyncpg.Connection):
                 {
                     "role": "user",
                     "content": f"""
-                    Analyze these calendar patterns for the past 7 days for potential burnout risk:
+                    Analyze these calendar patterns for the past {days} days for potential burnout risk:
                     
                     Meeting Statistics:
                     - Total meetings: {calendar_stats['total_meetings']}
