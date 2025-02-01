@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import axios from "axios";
-import { GalleryVerticalEnd } from "lucide-react";
+import { NotebookPen } from "lucide-react";
 import Image from "next/image";
 import { LoginForm } from "@/components/login-form";
 
@@ -82,7 +82,7 @@ export default function Auth() {
         <div className="flex justify-center gap-2 md:justify-start">
           <a href="#" className="flex items-center gap-2 font-medium">
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <GalleryVerticalEnd className="size-4" />
+              <NotebookPen className="size-4" />
             </div>
             Work Diary
           </a>

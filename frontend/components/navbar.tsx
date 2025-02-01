@@ -20,7 +20,7 @@ import {
   User2,
   Calendar,
   Github,
-  GalleryVerticalEnd,
+  NotebookPen,
   Slack,
 } from "lucide-react";
 
@@ -48,7 +48,7 @@ export function Navbar({ user, currentPage = "dashboard" }: NavbarProps) {
         </SheetTrigger>
         <SheetContent side="left">
           <div className="flex items-center gap-2 mb-6">
-            <GalleryVerticalEnd className="h-6 w-6" />
+            <NotebookPen className="h-6 w-6" />
             <span className="font-semibold text-lg">Work Diary</span>
           </div>
           <div className="grid gap-2 py-6">
@@ -65,7 +65,7 @@ export function Navbar({ user, currentPage = "dashboard" }: NavbarProps) {
         </SheetContent>
       </Sheet>
       <div className="flex items-center gap-2 mr-6">
-        <GalleryVerticalEnd className="h-6 w-6" />
+        <NotebookPen className="h-6 w-6" />
         <span className="font-semibold text-lg hidden md:inline">
           Work Diary
         </span>

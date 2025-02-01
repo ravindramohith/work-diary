@@ -10,9 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import axios from "axios";
-import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { useToast } from "@/components/ui/use-toast";
 import {
   DropdownMenu,
@@ -23,12 +21,8 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
-  Menu,
-  User2,
-  Calendar,
   Github,
   CheckCircle2,
-  GalleryVerticalEnd,
   Slack,
   ChevronDown,
   Clock,
@@ -36,8 +30,9 @@ import {
   CalendarDays,
   CalendarRange,
   Calendar as CalendarIcon,
+  GalleryVerticalEnd,
+  Calendar,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Navbar } from "@/components/navbar";
 import {
   Card,
@@ -76,6 +71,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AIAnalysis } from "@/components/ai-analysis";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { motion } from "framer-motion";
+import { Sparkles } from "lucide-react";
 
 interface ActivityData {
   messagesByDay: {
@@ -205,7 +209,16 @@ export default function Dashboard() {
       refetchOnWindowFocus: false,
     });
 
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState<string | null>(null);
+  const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+
   const handleSendNudge = async () => {
+    setIsAnalyzing(true);
+    setIsAccordionOpen(true);
+    setAiAnalysis(null);
+
     try {
       // Check if Slack is connected
       if (!user?.slack_user_id) {
@@ -217,11 +230,11 @@ export default function Dashboard() {
         return;
       }
 
+      let slackResponse, githubResponse;
       const token = getToken();
-      let slackResponse, calendarResponse, githubResponse;
 
-      // Always analyze Slack as it's required
-      setAnalysisStatus("Analyzing Slack...");
+      // Analyze Slack (Required)
+      setAnalysisStep("Analyzing Slack activity patterns... 🔍");
       try {
         slackResponse = await axios.post(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/slack/analyze`,
@@ -233,43 +246,20 @@ export default function Dashboard() {
             },
           }
         );
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Visual delay
       } catch (error) {
+        console.error("Slack analysis failed:", error);
         toast({
           variant: "destructive",
           title: "Error",
           description: "Failed to analyze Slack activity",
         });
-        setAnalysisStatus("Send me a nudge");
-        return;
+        throw error;
       }
 
-      // Only analyze Calendar if connected
-      if (user?.google_calendar_connected) {
-        setAnalysisStatus("Analyzing Calendar...");
-        try {
-          calendarResponse = await axios.post(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/calendar/analyze`,
-            { days: daysToAnalyze },
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-            }
-          );
-        } catch (error) {
-          console.error("Calendar analysis failed:", error);
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to analyze Calendar activity",
-          });
-        }
-      }
-
-      // Only analyze GitHub if connected
+      // Analyze GitHub if connected
       if (user?.github_user_id) {
-        setAnalysisStatus("Analyzing GitHub...");
+        setAnalysisStep("Processing GitHub contributions... 💻");
         try {
           githubResponse = await axios.post(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/github/analyze`,
@@ -281,6 +271,7 @@ export default function Dashboard() {
               },
             }
           );
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Visual delay
         } catch (error) {
           console.error("GitHub analysis failed:", error);
           toast({
@@ -291,14 +282,23 @@ export default function Dashboard() {
         }
       }
 
-      setAnalysisStatus("Hold up, almost done...");
-      const nudgeResponse = await axios.post(
+      // Use pre-fetched calendar data
+      if (user?.google_calendar_connected) {
+        setAnalysisStep("Examining calendar patterns... 📅");
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Visual delay for consistency
+      }
+
+      // Generate combined analysis
+      setAnalysisStep("Generating AI insights... ✨");
+      const analyses = {
+        slack_analysis: slackResponse?.data,
+        calendar_analysis: calendarData,
+        github_analysis: githubResponse?.data,
+      };
+
+      const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/slack/send-combined-nudge`,
-        {
-          slack_analysis: slackResponse?.data,
-          calendar_analysis: calendarResponse?.data,
-          github_analysis: githubResponse?.data,
-        },
+        analyses,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -307,23 +307,23 @@ export default function Dashboard() {
         }
       );
 
-      setAnalysisStatus("Sent successfully!");
+      setAiAnalysis(response.data.analysis);
+      setAnalysisStep("Analysis complete! 🎉");
+
       toast({
         title: "Success",
-        description: "Nudge sent successfully! Check your Slack.",
+        description: "Nudge sent successfully!",
       });
-      setTimeout(() => setAnalysisStatus("Send me a nudge"), 3000);
-      return nudgeResponse.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending nudge:", error);
-      setAnalysisStatus("Failed to send nudge");
+      setAnalysisStep("Analysis failed ❌");
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to send nudge. Please try again.",
+        description: error.response?.data?.detail || "Failed to send nudge",
       });
-      setTimeout(() => setAnalysisStatus("Send me a nudge"), 3000);
-      throw error;
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -398,35 +398,31 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen">
       <Navbar user={user} currentPage="dashboard" />
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center gap-4">
+          {/* Analysis Controls Section */}
+          <div className="w-full mb-8 flex flex-row justify-between items-center flex-wrap">
+            <h1
+              className="text-3xl font-bold mb-4 bg-gradient-to-b 
+    from-black to-neutral-800 dark:from-neutral-100 dark:to-neutral-500 
+    text-transparent bg-clip-text"
+            >
+              {user?.name
+                ? `${user.name}'s Dashboard`
+                : "Productivity Analytics"}
+            </h1>
+
+            <div className="flex flex-col space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4 mb-4">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-[200px] justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      {(() => {
-                        const option = timeRangeOptions.find(
-                          (opt) => opt.value === daysToAnalyze
-                        );
-                        const Icon = option?.icon;
-                        return Icon ? (
-                          <Icon className="h-4 w-4 text-primary" />
-                        ) : null;
-                      })()}
-                      <span>
-                        {
-                          timeRangeOptions.find(
-                            (opt) => opt.value === daysToAnalyze
-                          )?.label
-                        }
-                      </span>
-                    </div>
-                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  <Button variant="outline" className="w-full sm:w-[220px]">
+                    <Clock className="mr-2 h-4 w-4" />
+                    {
+                      timeRangeOptions.find(
+                        (opt) => opt.value === daysToAnalyze
+                      )?.label
+                    }
+                    <ChevronDown className="ml-2 h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-[220px]">
@@ -460,30 +456,90 @@ export default function Dashboard() {
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
+
               <Button
-                onClick={() => sendNudgeMutation.mutate()}
-                disabled={sendNudgeMutation.isPending}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                onClick={handleSendNudge}
+                disabled={isAnalyzing || !user?.slack_user_id}
+                className="w-full sm:w-[180px]"
               >
-                {sendNudgeMutation.isPending ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {analysisStatus}
-                  </div>
+                {isAnalyzing ? (
+                  <motion.span
+                    className="flex items-center gap-2"
+                    animate={{ opacity: [1, 0.5, 1] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Analyzing...
+                  </motion.span>
                 ) : (
                   <>
-                    <Slack className="mr-2 h-4 w-4" />
-                    {analysisStatus}
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Analyse
                   </>
                 )}
               </Button>
             </div>
+
+            {/* Analysis Accordion */}
+            <Accordion
+              type="single"
+              collapsible
+              value={isAccordionOpen ? "analysis" : ""}
+              className="w-full"
+            >
+              <AccordionItem value="analysis" className="border-none">
+                <AccordionContent>
+                  <Card className="w-full">
+                    <CardContent className="pt-6">
+                      {analysisStep && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex flex-col gap-4"
+                        >
+                          <div className="flex items-center gap-2">
+                            <motion.div
+                              animate={{
+                                scale: [1, 2, 1],
+                                rotate: [0, 360],
+                              }}
+                              transition={{
+                                duration: 2,
+                                repeat: isAnalyzing ? Infinity : 0,
+                                ease: "easeInOut",
+                              }}
+                            >
+                              <div className="w-2 h-2 rounded-full bg-primary" />
+                            </motion.div>
+                            <span className="text-sm text-muted-foreground">
+                              {analysisStep}
+                            </span>
+                          </div>
+
+                          {aiAnalysis && !isAnalyzing && (
+                            <motion.div
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ delay: 0.3 }}
+                              className="w-full"
+                            >
+                              <AIAnalysis data={aiAnalysis} isLoading={false} />
+                            </motion.div>
+                          )}
+                        </motion.div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
 
-          {activityLoading ? (
-            <LoadingSpinner text="Analyzing Slack activity" />
-          ) : (
-            <div className="space-y-8">
+          {/* Rest of the dashboard content */}
+          <div className="space-y-8">
+            {activityLoading ? (
+              <LoadingSpinner text="Analyzing Slack activity" />
+            ) : (
               <div>
                 <h2 className="text-2xl font-bold mb-4">SLACK ANALYSIS</h2>
 
@@ -969,184 +1025,589 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {user?.github_user_id && (
-                <div>
-                  <h2 className="text-2xl font-bold mb-4">GITHUB ANALYSIS</h2>
+                {user?.github_user_id && (
+                  <div>
+                    <h2 className="text-2xl font-bold mb-4">GITHUB ANALYSIS</h2>
 
-                  {/* Tabs for large screens */}
-                  <div className="hidden lg:block">
-                    <Tabs defaultValue="activity" className="space-y-4">
-                      <TabsList className="grid w-full grid-cols-2 gap-4">
-                        <TabsTrigger
-                          value="activity"
-                          className="whitespace-nowrap"
-                        >
-                          GitHub Activity
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="insights"
-                          className="whitespace-nowrap"
-                        >
-                          Code Insights
-                        </TabsTrigger>
-                      </TabsList>
+                    {/* Tabs for large screens */}
+                    <div className="hidden lg:block">
+                      <Tabs defaultValue="activity" className="space-y-4">
+                        <TabsList className="grid w-full grid-cols-2 gap-4">
+                          <TabsTrigger
+                            value="activity"
+                            className="whitespace-nowrap"
+                          >
+                            GitHub Activity
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="insights"
+                            className="whitespace-nowrap"
+                          >
+                            Code Insights
+                          </TabsTrigger>
+                        </TabsList>
 
-                      <TabsContent value="activity" className="space-y-4">
-                        <GitHubActivity
-                          data={githubData}
-                          isLoading={githubLoading}
-                          user={user}
-                        />
-                      </TabsContent>
+                        <TabsContent value="activity" className="space-y-4">
+                          <GitHubActivity
+                            data={githubData}
+                            isLoading={githubLoading}
+                            user={user}
+                          />
+                        </TabsContent>
 
-                      <TabsContent value="insights" className="space-y-4">
-                        <GitHubInsights
-                          data={githubData}
-                          isLoading={githubLoading}
-                        />
-                      </TabsContent>
-                    </Tabs>
-                  </div>
+                        <TabsContent value="insights" className="space-y-4">
+                          <GitHubInsights
+                            data={githubData}
+                            isLoading={githubLoading}
+                          />
+                        </TabsContent>
+                      </Tabs>
+                    </div>
 
-                  {/* Select menu for medium and smaller screens */}
-                  <div className="lg:hidden space-y-6">
-                    <Select
-                      defaultValue="activity"
-                      onValueChange={(value: string) => {
-                        const sections = document.querySelectorAll(
-                          "[data-github-section]"
-                        );
-                        sections.forEach((section) => {
-                          if (section instanceof HTMLElement) {
-                            section.style.display =
-                              section.dataset.githubSection === value
-                                ? "block"
-                                : "none";
-                          }
-                        });
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select view" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="activity">
-                          GitHub Activity
-                        </SelectItem>
-                        <SelectItem value="insights">Code Insights</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <div className="space-y-8">
-                      {/* GitHub Activity Section */}
-                      <div data-github-section="activity" className="space-y-4">
-                        <h3 className="text-lg font-semibold">
-                          GitHub Activity
-                        </h3>
-                        <GitHubActivity
-                          data={githubData}
-                          isLoading={githubLoading}
-                          user={user}
-                        />
-                      </div>
-
-                      {/* Code Insights Section */}
-                      <div
-                        data-github-section="insights"
-                        className="space-y-4"
-                        style={{ display: "none" }}
+                    {/* Select menu for medium and smaller screens */}
+                    <div className="lg:hidden space-y-6">
+                      <Select
+                        defaultValue="activity"
+                        onValueChange={(value: string) => {
+                          const sections = document.querySelectorAll(
+                            "[data-github-section]"
+                          );
+                          sections.forEach((section) => {
+                            if (section instanceof HTMLElement) {
+                              section.style.display =
+                                section.dataset.githubSection === value
+                                  ? "block"
+                                  : "none";
+                            }
+                          });
+                        }}
                       >
-                        <h3 className="text-lg font-semibold">Code Insights</h3>
-                        <GitHubInsights
-                          data={githubData}
-                          isLoading={githubLoading}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {!user?.github_user_id && (
-                <Card className="mt-8">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Github className="h-5 w-5" />
-                      GitHub Not Connected
-                    </CardTitle>
-                    <CardDescription>
-                      Connect your GitHub account to see code activity insights
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="text-center py-8">
-                      <div className="flex flex-col items-center gap-4">
-                        <Github className="h-16 w-16 text-muted-foreground/50" />
-                        <div className="space-y-2">
-                          <h3 className="font-medium">
-                            Track Your Code Activity
-                          </h3>
-                          <p className="text-sm text-muted-foreground max-w-sm">
-                            Connect GitHub to analyze your:
-                          </p>
-                          <ul className="text-sm text-muted-foreground space-y-1">
-                            <li>• Commit patterns and quality</li>
-                            <li>• Code review engagement</li>
-                            <li>• Repository contributions</li>
-                            <li>• Language preferences</li>
-                          </ul>
-                        </div>
-                        <Button
-                          onClick={() => {
-                            window.location.href = `${
-                              process.env.NEXT_PUBLIC_BACKEND_URL
-                            }/connect-github?user_email=${encodeURIComponent(
-                              user.email
-                            )}`;
-                          }}
-                        >
-                          <Github className="h-4 w-4 mr-2" />
-                          Connect GitHub
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {user?.google_calendar_connected && (
-                <div className="mt-8">
-                  <h2 className="text-2xl font-bold mb-4">CALENDAR ANALYSIS</h2>
-
-                  {/* Tabs for large screens */}
-                  <div className="hidden lg:block">
-                    <Tabs defaultValue="meetings" className="space-y-4">
-                      <TabsList className="grid w-full grid-cols-3 gap-4 mb-6">
-                        <TabsTrigger
-                          value="meetings"
-                          className="whitespace-nowrap text-sm"
-                        >
-                          Meeting Activity
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="patterns"
-                          className="whitespace-nowrap text-sm"
-                        >
-                          Meeting Patterns
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="stats"
-                          className="whitespace-nowrap text-sm"
-                        >
-                          Meeting Stats
-                        </TabsTrigger>
-                      </TabsList>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select view" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="activity">
+                            GitHub Activity
+                          </SelectItem>
+                          <SelectItem value="insights">
+                            Code Insights
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
 
                       <div className="space-y-8">
-                        <TabsContent value="meetings">
-                          <div className="grid gap-4 md:grid-cols-2">
+                        {/* GitHub Activity Section */}
+                        <div
+                          data-github-section="activity"
+                          className="space-y-4"
+                        >
+                          <h3 className="text-lg font-semibold">
+                            GitHub Activity
+                          </h3>
+                          <GitHubActivity
+                            data={githubData}
+                            isLoading={githubLoading}
+                            user={user}
+                          />
+                        </div>
+
+                        {/* Code Insights Section */}
+                        <div
+                          data-github-section="insights"
+                          className="space-y-4"
+                          style={{ display: "none" }}
+                        >
+                          <h3 className="text-lg font-semibold">
+                            Code Insights
+                          </h3>
+                          <GitHubInsights
+                            data={githubData}
+                            isLoading={githubLoading}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!user?.github_user_id && (
+                  <Card className="mt-8">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Github className="h-5 w-5" />
+                        GitHub Not Connected
+                      </CardTitle>
+                      <CardDescription>
+                        Connect your GitHub account to see code activity
+                        insights
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="text-center py-8">
+                        <div className="flex flex-col items-center gap-4">
+                          <Github className="h-16 w-16 text-muted-foreground/50" />
+                          <div className="space-y-2">
+                            <h3 className="font-medium">
+                              Track Your Code Activity
+                            </h3>
+                            <p className="text-sm text-muted-foreground max-w-sm">
+                              Connect GitHub to analyze your:
+                            </p>
+                            <ul className="text-sm text-muted-foreground space-y-1">
+                              <li>• Commit patterns and quality</li>
+                              <li>• Code review engagement</li>
+                              <li>• Repository contributions</li>
+                              <li>• Language preferences</li>
+                            </ul>
+                          </div>
+                          <Button
+                            onClick={() => {
+                              window.location.href = `${
+                                process.env.NEXT_PUBLIC_BACKEND_URL
+                              }/connect-github?user_email=${encodeURIComponent(
+                                user.email
+                              )}`;
+                            }}
+                          >
+                            <Github className="h-4 w-4 mr-2" />
+                            Connect GitHub
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {user?.google_calendar_connected && (
+                  <div className="mt-8">
+                    <h2 className="text-2xl font-bold mb-4">
+                      CALENDAR ANALYSIS
+                    </h2>
+
+                    {/* Tabs for large screens */}
+                    <div className="hidden lg:block">
+                      <Tabs defaultValue="meetings" className="space-y-4">
+                        <TabsList className="grid w-full grid-cols-3 gap-4 mb-6">
+                          <TabsTrigger
+                            value="meetings"
+                            className="whitespace-nowrap text-sm"
+                          >
+                            Meeting Activity
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="patterns"
+                            className="whitespace-nowrap text-sm"
+                          >
+                            Meeting Patterns
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="stats"
+                            className="whitespace-nowrap text-sm"
+                          >
+                            Meeting Stats
+                          </TabsTrigger>
+                        </TabsList>
+
+                        <div className="space-y-8">
+                          <TabsContent value="meetings">
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle>Daily Meeting Count</CardTitle>
+                                  <CardDescription>
+                                    Number of meetings per day
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="h-[300px]">
+                                  {calendarData?.daily_meeting_counts ? (
+                                    <ResponsiveContainer
+                                      width="100%"
+                                      height="100%"
+                                    >
+                                      <LineChart
+                                        data={Object.entries(
+                                          calendarData.daily_meeting_counts
+                                        ).map(([date, count]) => ({
+                                          date,
+                                          count,
+                                        }))}
+                                      >
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" />
+                                        <YAxis />
+                                        <Tooltip />
+                                        <Line
+                                          type="monotone"
+                                          dataKey="count"
+                                          stroke="#8884d8"
+                                        />
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                  ) : (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                      No meeting data available
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle>
+                                    Meeting Types Distribution
+                                  </CardTitle>
+                                  <CardDescription>
+                                    Breakdown of meeting categories
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="h-[300px]">
+                                  {calendarData?.meeting_types ? (
+                                    <ResponsiveContainer
+                                      width="100%"
+                                      height="100%"
+                                    >
+                                      <PieChart>
+                                        <Pie
+                                          data={[
+                                            {
+                                              name: "1:1 Meetings",
+                                              value:
+                                                calendarData.meeting_types
+                                                  .one_on_one,
+                                            },
+                                            {
+                                              name: "Team Meetings",
+                                              value:
+                                                calendarData.meeting_types
+                                                  .team_meetings,
+                                            },
+                                            {
+                                              name: "External Meetings",
+                                              value:
+                                                calendarData.meeting_types
+                                                  .external_meetings,
+                                            },
+                                          ]}
+                                          dataKey="value"
+                                          nameKey="name"
+                                          cx="50%"
+                                          cy="50%"
+                                          outerRadius={80}
+                                          fill="#8884d8"
+                                          label
+                                        >
+                                          {Object.keys(
+                                            calendarData.meeting_types
+                                          ).map((_, index) => (
+                                            <Cell
+                                              key={`cell-${index}`}
+                                              fill={
+                                                COLORS[index % COLORS.length]
+                                              }
+                                            />
+                                          ))}
+                                        </Pie>
+                                        <Tooltip />
+                                        <Legend />
+                                      </PieChart>
+                                    </ResponsiveContainer>
+                                  ) : (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                      No meeting type data available
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            </div>
+                          </TabsContent>
+
+                          <TabsContent value="patterns">
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle>Weekly Pattern</CardTitle>
+                                  <CardDescription>
+                                    Meeting distribution across weekdays
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="h-[300px]">
+                                  {calendarData?.weekly_patterns ? (
+                                    <ResponsiveContainer
+                                      width="100%"
+                                      height="100%"
+                                    >
+                                      <BarChart
+                                        data={Object.entries(
+                                          calendarData.weekly_patterns
+                                        ).map(([day, count]) => ({
+                                          day,
+                                          count,
+                                        }))}
+                                      >
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="day" />
+                                        <YAxis />
+                                        <Tooltip />
+                                        <Bar dataKey="count" fill="#82ca9d" />
+                                      </BarChart>
+                                    </ResponsiveContainer>
+                                  ) : (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                      No weekly pattern data available
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle>Hourly Distribution</CardTitle>
+                                  <CardDescription>
+                                    Meeting times throughout the day
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="h-[300px]">
+                                  {calendarData?.hourly_distribution ? (
+                                    <ResponsiveContainer
+                                      width="100%"
+                                      height="100%"
+                                    >
+                                      <BarChart
+                                        data={Object.entries(
+                                          calendarData.hourly_distribution
+                                        ).map(([hour, count]) => ({
+                                          hour,
+                                          count,
+                                        }))}
+                                      >
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="hour" />
+                                        <YAxis />
+                                        <Tooltip />
+                                        <Bar dataKey="count" fill="#ffc658" />
+                                      </BarChart>
+                                    </ResponsiveContainer>
+                                  ) : (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                      No hourly distribution data available
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            </div>
+                          </TabsContent>
+
+                          <TabsContent value="stats">
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle className="flex items-center gap-2">
+                                    <GalleryVerticalEnd className="h-5 w-5 text-primary" />
+                                    Meeting Metrics
+                                  </CardTitle>
+                                  <CardDescription>
+                                    Key meeting statistics and trends
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                      <span className="text-sm font-medium">
+                                        Total Meetings
+                                      </span>
+                                      <span className="text-sm text-muted-foreground">
+                                        {calendarData?.total_meetings}
+                                      </span>
+                                    </div>
+                                    <Progress
+                                      value={
+                                        (calendarData?.total_meetings || 0) / 2
+                                      }
+                                      className="h-2"
+                                    />
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                      <span className="text-sm font-medium">
+                                        Average Duration
+                                      </span>
+                                      <span className="text-sm text-muted-foreground">
+                                        {calendarData?.average_meeting_duration?.toFixed(
+                                          1
+                                        )}{" "}
+                                        mins
+                                      </span>
+                                    </div>
+                                    <Progress
+                                      value={
+                                        (calendarData?.average_meeting_duration ||
+                                          0) / 1.2
+                                      }
+                                      className="h-2"
+                                    />
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                      <span className="text-sm font-medium">
+                                        Meetings per Day
+                                      </span>
+                                      <span className="text-sm text-muted-foreground">
+                                        {calendarData?.meetings_per_day?.toFixed(
+                                          1
+                                        )}
+                                      </span>
+                                    </div>
+                                    <Progress
+                                      value={
+                                        (calendarData?.meetings_per_day || 0) *
+                                        10
+                                      }
+                                      className="h-2"
+                                    />
+                                  </div>
+                                </CardContent>
+                              </Card>
+
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle className="flex items-center gap-2">
+                                    <AlertCircle className="h-5 w-5 text-primary" />
+                                    Meeting Patterns
+                                  </CardTitle>
+                                  <CardDescription>
+                                    Potential work-life balance indicators
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                  <div className="grid gap-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-medium leading-none">
+                                          Back-to-Back Meetings
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                          Consecutive meetings without breaks
+                                        </p>
+                                      </div>
+                                      <Badge
+                                        variant={
+                                          (calendarData?.back_to_back_meetings ||
+                                            0) > 5
+                                            ? "destructive"
+                                            : "secondary"
+                                        }
+                                      >
+                                        {calendarData?.back_to_back_meetings ||
+                                          0}
+                                      </Badge>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-medium leading-none">
+                                          After Hours Meetings
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                          Meetings outside work hours
+                                        </p>
+                                      </div>
+                                      <Badge
+                                        variant={
+                                          (calendarData?.meetings_after_hours ||
+                                            0) > 3
+                                            ? "destructive"
+                                            : "secondary"
+                                        }
+                                      >
+                                        {calendarData?.meetings_after_hours ||
+                                          0}
+                                      </Badge>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-medium leading-none">
+                                          Early Meetings
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                          Meetings before 9 AM
+                                        </p>
+                                      </div>
+                                      <Badge
+                                        variant={
+                                          (calendarData?.early_meetings || 0) >
+                                          3
+                                            ? "destructive"
+                                            : "secondary"
+                                        }
+                                      >
+                                        {calendarData?.early_meetings || 0}
+                                      </Badge>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-medium leading-none">
+                                          Recurring Meetings
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                          Regular scheduled meetings
+                                        </p>
+                                      </div>
+                                      <Badge variant="secondary">
+                                        {calendarData?.recurring_meetings || 0}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            </div>
+                          </TabsContent>
+                        </div>
+                      </Tabs>
+                    </div>
+
+                    {/* Select menu and stacked cards for medium and smaller screens */}
+                    <div className="lg:hidden space-y-6">
+                      <Select
+                        defaultValue="meetings"
+                        onValueChange={(value: string) => {
+                          const sections =
+                            document.querySelectorAll("[data-section]");
+                          sections.forEach((section) => {
+                            if (section instanceof HTMLElement) {
+                              section.style.display =
+                                section.dataset.section === value
+                                  ? "block"
+                                  : "none";
+                            }
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select view" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="meetings">
+                            Meeting Activity
+                          </SelectItem>
+                          <SelectItem value="patterns">
+                            Meeting Patterns
+                          </SelectItem>
+                          <SelectItem value="stats">Meeting Stats</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <div className="space-y-8">
+                        {/* Meeting Activity Section */}
+                        <div data-section="meetings" className="space-y-4">
+                          <h3 className="text-lg font-semibold">
+                            Meeting Activity
+                          </h3>
+                          <div className="grid gap-4">
                             <Card>
                               <CardHeader>
                                 <CardTitle>Daily Meeting Count</CardTitle>
@@ -1253,10 +1714,18 @@ export default function Dashboard() {
                               </CardContent>
                             </Card>
                           </div>
-                        </TabsContent>
+                        </div>
 
-                        <TabsContent value="patterns">
-                          <div className="grid gap-4 md:grid-cols-2">
+                        {/* Meeting Patterns Section */}
+                        <div
+                          data-section="patterns"
+                          className="space-y-4"
+                          style={{ display: "none" }}
+                        >
+                          <h3 className="text-lg font-semibold">
+                            Meeting Patterns
+                          </h3>
+                          <div className="grid gap-4">
                             <Card>
                               <CardHeader>
                                 <CardTitle>Weekly Pattern</CardTitle>
@@ -1329,10 +1798,18 @@ export default function Dashboard() {
                               </CardContent>
                             </Card>
                           </div>
-                        </TabsContent>
+                        </div>
 
-                        <TabsContent value="stats">
-                          <div className="grid gap-4 md:grid-cols-2">
+                        {/* Meeting Stats Section */}
+                        <div
+                          data-section="stats"
+                          className="space-y-4"
+                          style={{ display: "none" }}
+                        >
+                          <h3 className="text-lg font-semibold">
+                            Meeting Stats
+                          </h3>
+                          <div className="grid gap-4">
                             <Card>
                               <CardHeader>
                                 <CardTitle className="flex items-center gap-2">
@@ -1494,458 +1971,67 @@ export default function Dashboard() {
                               </CardContent>
                             </Card>
                           </div>
-                        </TabsContent>
-                      </div>
-                    </Tabs>
-                  </div>
-
-                  {/* Select menu and stacked cards for medium and smaller screens */}
-                  <div className="lg:hidden space-y-6">
-                    <Select
-                      defaultValue="meetings"
-                      onValueChange={(value: string) => {
-                        const sections =
-                          document.querySelectorAll("[data-section]");
-                        sections.forEach((section) => {
-                          if (section instanceof HTMLElement) {
-                            section.style.display =
-                              section.dataset.section === value
-                                ? "block"
-                                : "none";
-                          }
-                        });
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select view" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="meetings">
-                          Meeting Activity
-                        </SelectItem>
-                        <SelectItem value="patterns">
-                          Meeting Patterns
-                        </SelectItem>
-                        <SelectItem value="stats">Meeting Stats</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <div className="space-y-8">
-                      {/* Meeting Activity Section */}
-                      <div data-section="meetings" className="space-y-4">
-                        <h3 className="text-lg font-semibold">
-                          Meeting Activity
-                        </h3>
-                        <div className="grid gap-4">
-                          <Card>
-                            <CardHeader>
-                              <CardTitle>Daily Meeting Count</CardTitle>
-                              <CardDescription>
-                                Number of meetings per day
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="h-[300px]">
-                              {calendarData?.daily_meeting_counts ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <LineChart
-                                    data={Object.entries(
-                                      calendarData.daily_meeting_counts
-                                    ).map(([date, count]) => ({
-                                      date,
-                                      count,
-                                    }))}
-                                  >
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Line
-                                      type="monotone"
-                                      dataKey="count"
-                                      stroke="#8884d8"
-                                    />
-                                  </LineChart>
-                                </ResponsiveContainer>
-                              ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                  No meeting data available
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-
-                          <Card>
-                            <CardHeader>
-                              <CardTitle>Meeting Types Distribution</CardTitle>
-                              <CardDescription>
-                                Breakdown of meeting categories
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="h-[300px]">
-                              {calendarData?.meeting_types ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <PieChart>
-                                    <Pie
-                                      data={[
-                                        {
-                                          name: "1:1 Meetings",
-                                          value:
-                                            calendarData.meeting_types
-                                              .one_on_one,
-                                        },
-                                        {
-                                          name: "Team Meetings",
-                                          value:
-                                            calendarData.meeting_types
-                                              .team_meetings,
-                                        },
-                                        {
-                                          name: "External Meetings",
-                                          value:
-                                            calendarData.meeting_types
-                                              .external_meetings,
-                                        },
-                                      ]}
-                                      dataKey="value"
-                                      nameKey="name"
-                                      cx="50%"
-                                      cy="50%"
-                                      outerRadius={80}
-                                      fill="#8884d8"
-                                      label
-                                    >
-                                      {Object.keys(
-                                        calendarData.meeting_types
-                                      ).map((_, index) => (
-                                        <Cell
-                                          key={`cell-${index}`}
-                                          fill={COLORS[index % COLORS.length]}
-                                        />
-                                      ))}
-                                    </Pie>
-                                    <Tooltip />
-                                    <Legend />
-                                  </PieChart>
-                                </ResponsiveContainer>
-                              ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                  No meeting type data available
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        </div>
-                      </div>
-
-                      {/* Meeting Patterns Section */}
-                      <div
-                        data-section="patterns"
-                        className="space-y-4"
-                        style={{ display: "none" }}
-                      >
-                        <h3 className="text-lg font-semibold">
-                          Meeting Patterns
-                        </h3>
-                        <div className="grid gap-4">
-                          <Card>
-                            <CardHeader>
-                              <CardTitle>Weekly Pattern</CardTitle>
-                              <CardDescription>
-                                Meeting distribution across weekdays
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="h-[300px]">
-                              {calendarData?.weekly_patterns ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <BarChart
-                                    data={Object.entries(
-                                      calendarData.weekly_patterns
-                                    ).map(([day, count]) => ({
-                                      day,
-                                      count,
-                                    }))}
-                                  >
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="day" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Bar dataKey="count" fill="#82ca9d" />
-                                  </BarChart>
-                                </ResponsiveContainer>
-                              ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                  No weekly pattern data available
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-
-                          <Card>
-                            <CardHeader>
-                              <CardTitle>Hourly Distribution</CardTitle>
-                              <CardDescription>
-                                Meeting times throughout the day
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="h-[300px]">
-                              {calendarData?.hourly_distribution ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <BarChart
-                                    data={Object.entries(
-                                      calendarData.hourly_distribution
-                                    ).map(([hour, count]) => ({
-                                      hour,
-                                      count,
-                                    }))}
-                                  >
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="hour" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Bar dataKey="count" fill="#ffc658" />
-                                  </BarChart>
-                                </ResponsiveContainer>
-                              ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                  No hourly distribution data available
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        </div>
-                      </div>
-
-                      {/* Meeting Stats Section */}
-                      <div
-                        data-section="stats"
-                        className="space-y-4"
-                        style={{ display: "none" }}
-                      >
-                        <h3 className="text-lg font-semibold">Meeting Stats</h3>
-                        <div className="grid gap-4">
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <GalleryVerticalEnd className="h-5 w-5 text-primary" />
-                                Meeting Metrics
-                              </CardTitle>
-                              <CardDescription>
-                                Key meeting statistics and trends
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                              <div className="space-y-2">
-                                <div className="flex justify-between">
-                                  <span className="text-sm font-medium">
-                                    Total Meetings
-                                  </span>
-                                  <span className="text-sm text-muted-foreground">
-                                    {calendarData?.total_meetings}
-                                  </span>
-                                </div>
-                                <Progress
-                                  value={
-                                    (calendarData?.total_meetings || 0) / 2
-                                  }
-                                  className="h-2"
-                                />
-                              </div>
-
-                              <div className="space-y-2">
-                                <div className="flex justify-between">
-                                  <span className="text-sm font-medium">
-                                    Average Duration
-                                  </span>
-                                  <span className="text-sm text-muted-foreground">
-                                    {calendarData?.average_meeting_duration?.toFixed(
-                                      1
-                                    )}{" "}
-                                    mins
-                                  </span>
-                                </div>
-                                <Progress
-                                  value={
-                                    (calendarData?.average_meeting_duration ||
-                                      0) / 1.2
-                                  }
-                                  className="h-2"
-                                />
-                              </div>
-
-                              <div className="space-y-2">
-                                <div className="flex justify-between">
-                                  <span className="text-sm font-medium">
-                                    Meetings per Day
-                                  </span>
-                                  <span className="text-sm text-muted-foreground">
-                                    {calendarData?.meetings_per_day?.toFixed(1)}
-                                  </span>
-                                </div>
-                                <Progress
-                                  value={
-                                    (calendarData?.meetings_per_day || 0) * 10
-                                  }
-                                  className="h-2"
-                                />
-                              </div>
-                            </CardContent>
-                          </Card>
-
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <AlertCircle className="h-5 w-5 text-primary" />
-                                Meeting Patterns
-                              </CardTitle>
-                              <CardDescription>
-                                Potential work-life balance indicators
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                              <div className="grid gap-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-medium leading-none">
-                                      Back-to-Back Meetings
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                      Consecutive meetings without breaks
-                                    </p>
-                                  </div>
-                                  <Badge
-                                    variant={
-                                      (calendarData?.back_to_back_meetings ||
-                                        0) > 5
-                                        ? "destructive"
-                                        : "secondary"
-                                    }
-                                  >
-                                    {calendarData?.back_to_back_meetings || 0}
-                                  </Badge>
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-medium leading-none">
-                                      After Hours Meetings
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                      Meetings outside work hours
-                                    </p>
-                                  </div>
-                                  <Badge
-                                    variant={
-                                      (calendarData?.meetings_after_hours ||
-                                        0) > 3
-                                        ? "destructive"
-                                        : "secondary"
-                                    }
-                                  >
-                                    {calendarData?.meetings_after_hours || 0}
-                                  </Badge>
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-medium leading-none">
-                                      Early Meetings
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                      Meetings before 9 AM
-                                    </p>
-                                  </div>
-                                  <Badge
-                                    variant={
-                                      (calendarData?.early_meetings || 0) > 3
-                                        ? "destructive"
-                                        : "secondary"
-                                    }
-                                  >
-                                    {calendarData?.early_meetings || 0}
-                                  </Badge>
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-medium leading-none">
-                                      Recurring Meetings
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                      Regular scheduled meetings
-                                    </p>
-                                  </div>
-                                  <Badge variant="secondary">
-                                    {calendarData?.recurring_meetings || 0}
-                                  </Badge>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {!user?.google_calendar_connected && (
-                <Card className="mt-8">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5" />
-                      Calendar Not Connected
-                    </CardTitle>
-                    <CardDescription>
-                      Connect your Google Calendar to see meeting insights
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="text-center py-8">
-                      <div className="flex flex-col items-center gap-4">
-                        <Calendar className="h-16 w-16 text-muted-foreground/50" />
-                        <div className="space-y-2">
-                          <h3 className="font-medium">Analyze Your Meetings</h3>
-                          <p className="text-sm text-muted-foreground max-w-sm">
-                            Connect Google Calendar to track your:
-                          </p>
-                          <ul className="text-sm text-muted-foreground space-y-1">
-                            <li>• Meeting load and patterns</li>
-                            <li>• Work-life balance</li>
-                            <li>• Focus time availability</li>
-                            <li>• Team collaboration metrics</li>
-                          </ul>
+                {!user?.google_calendar_connected && (
+                  <Card className="mt-8">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Calendar className="h-5 w-5" />
+                        Calendar Not Connected
+                      </CardTitle>
+                      <CardDescription>
+                        Connect your Google Calendar to see meeting insights
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="text-center py-8">
+                        <div className="flex flex-col items-center gap-4">
+                          <Calendar className="h-16 w-16 text-muted-foreground/50" />
+                          <div className="space-y-2">
+                            <h3 className="font-medium">
+                              Analyze Your Meetings
+                            </h3>
+                            <p className="text-sm text-muted-foreground max-w-sm">
+                              Connect Google Calendar to track your:
+                            </p>
+                            <ul className="text-sm text-muted-foreground space-y-1">
+                              <li>• Meeting load and patterns</li>
+                              <li>• Work-life balance</li>
+                              <li>• Focus time availability</li>
+                              <li>• Team collaboration metrics</li>
+                            </ul>
+                          </div>
+                          <Button
+                            onClick={() => {
+                              window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-google`;
+                            }}
+                          >
+                            <Calendar className="h-4 w-4 mr-2" />
+                            Connect Calendar
+                          </Button>
                         </div>
-                        <Button
-                          onClick={() => {
-                            window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/connect-google`;
-                          }}
-                        >
-                          <Calendar className="h-4 w-4 mr-2" />
-                          Connect Calendar
-                        </Button>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
 
-          {githubLoading && <LoadingSpinner text="Analyzing GitHub activity" />}
+            {githubLoading && (
+              <LoadingSpinner text="Analyzing GitHub activity" />
+            )}
 
-          {calendarLoading && (
-            <LoadingSpinner text="Analyzing Calendar activity" />
-          )}
+            {calendarLoading && (
+              <LoadingSpinner text="Analyzing Calendar activity" />
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
-}
-
-function MenuIcon() {
-  return <Menu className="h-6 w-6" />;
-}
-
-function GalleryVerticalEndIcon() {
-  return <GalleryVerticalEnd className="h-6 w-6" />;
 }
