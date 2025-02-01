@@ -914,6 +914,8 @@ async def get_slack_activity(
         weekday_count = 0
         weekend_count = 0
         daily_active_hours = defaultdict(set)
+        response_times_by_hour = defaultdict(list)  # New structure for response times
+        last_received_message = {}  # Track last received message per channel
 
         # Get list of all channels the user is part of
         conversations_response = client.users_conversations(
@@ -930,6 +932,7 @@ async def get_slack_activity(
                     channel=conv["id"],
                     oldest=start_date.timestamp(),
                     latest=end_date.timestamp(),
+                    limit=1000,  # Increased limit to get more messages
                 )
 
                 # Get channel name for context
@@ -937,40 +940,101 @@ async def get_slack_activity(
                     "name", "DM" if conv.get("is_im") else "private-channel"
                 )
 
-                for msg in messages_response.get("messages", []):
-                    # Skip messages not from the current user
-                    if msg.get("user") != current_user.slack_user_id:
-                        continue
+                # Sort messages by timestamp
+                all_messages = messages_response.get("messages", [])
+                all_messages.sort(key=lambda x: float(x["ts"]))
 
-                    # Convert timestamp to datetime
+                for i, msg in enumerate(all_messages):
                     msg_time = datetime.fromtimestamp(float(msg["ts"]), pytz.UTC)
 
-                    # Daily message count
-                    day = msg_time.date().isoformat()
-                    messages_by_day[day] += 1
+                    # Skip messages outside our date range
+                    if msg_time < start_date or msg_time > end_date:
+                        continue
 
-                    # Work hours vs after hours (9 AM - 5 PM considered work hours)
-                    hour = msg_time.hour
-                    if 9 <= hour <= 17:
-                        work_hours_count += 1
-                    else:
-                        after_hours_count += 1
+                    # If this is a message TO the user
+                    if msg.get("user") != current_user.slack_user_id:
+                        last_received_message[conv["id"]] = msg
+                        continue
 
-                    # Channel distribution
-                    channel_distribution[channel_name] += 1
+                    # If this is a message FROM the user
+                    if msg.get("user") == current_user.slack_user_id:
+                        # Daily message count and other metrics
+                        day = msg_time.date().isoformat()
+                        messages_by_day[day] += 1
 
-                    # Weekday vs weekend
-                    if msg_time.weekday() < 5:
-                        weekday_count += 1
-                    else:
-                        weekend_count += 1
+                        hour = msg_time.hour
+                        if 9 <= hour <= 17:
+                            work_hours_count += 1
+                        else:
+                            after_hours_count += 1
 
-                    # Daily active hours
-                    daily_active_hours[day].add(hour)
+                        channel_distribution[channel_name] += 1
+
+                        if msg_time.weekday() < 5:
+                            weekday_count += 1
+                        else:
+                            weekend_count += 1
+
+                        daily_active_hours[day].add(hour)
+
+                        # Calculate response time if there was a previous message to respond to
+                        last_msg = last_received_message.get(conv["id"])
+                        if last_msg:
+                            last_msg_time = datetime.fromtimestamp(
+                                float(last_msg["ts"]), pytz.UTC
+                            )
+
+                            # Only calculate response time if messages are within 24 hours
+                            time_diff = (msg_time - last_msg_time).total_seconds()
+                            if time_diff <= 86400:  # 24 hours in seconds
+                                response_time = time_diff / 60  # Convert to minutes
+                                response_times_by_hour[last_msg_time.hour].append(
+                                    response_time
+                                )
+
+                            # Clear the last received message since we've responded
+                            last_received_message[conv["id"]] = None
 
             except Exception as e:
                 print(f"Error fetching messages from channel {channel_name}: {str(e)}")
                 continue
+
+        # Calculate average response times by hour with better handling
+        avg_response_times = []
+        for hour in range(24):
+            times = response_times_by_hour[hour]
+            if times:
+                # Remove outliers (responses > 4 hours)
+                filtered_times = [t for t in times if t <= 240]
+                if filtered_times:
+                    avg_time = sum(filtered_times) / len(filtered_times)
+                else:
+                    avg_time = 0  # Default to 0 minutes if all responses were outliers
+            else:
+                # If no data for this hour, interpolate from adjacent hours
+                prev_hour = (hour - 1) % 24
+                next_hour = (hour + 1) % 24
+                prev_times = response_times_by_hour[prev_hour]
+                next_times = response_times_by_hour[next_hour]
+
+                if prev_times or next_times:
+                    all_adjacent_times = prev_times + next_times
+                    filtered_times = [t for t in all_adjacent_times if t <= 240]
+                    avg_time = (
+                        sum(filtered_times) / len(filtered_times)
+                        if filtered_times
+                        else 30
+                    )
+                else:
+                    avg_time = 30  # Default when no data available
+
+            avg_response_times.append(
+                {
+                    "hour": hour,
+                    "avgResponseTime": round(avg_time, 2),
+                    "messageCount": len(times),
+                }
+            )
 
         # Format the response data
         response = {
@@ -990,10 +1054,7 @@ async def get_slack_activity(
                     :5
                 ]  # Top 5 channels
             ],
-            "responseTimesByHour": [
-                {"hour": hour, "avgResponseTime": 15}  # Default 15 min response time
-                for hour in range(24)
-            ],
+            "responseTimesByHour": avg_response_times,
             "weekdayVsWeekend": [
                 {"name": "Weekdays", "messages": weekday_count},
                 {"name": "Weekends", "messages": weekend_count},

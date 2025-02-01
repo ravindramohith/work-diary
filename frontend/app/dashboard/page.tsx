@@ -97,6 +97,7 @@ interface ActivityData {
   responseTimesByHour: {
     hour: number;
     avgResponseTime: number;
+    messageCount: number;
   }[];
   weekdayVsWeekend: {
     name: string;
@@ -692,11 +693,21 @@ export default function Dashboard() {
                                 >
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis dataKey="hour" />
-                                  <YAxis />
+                                  <YAxis yAxisId="left" />
+                                  <YAxis yAxisId="right" orientation="right" />
                                   <Tooltip />
+                                  <Legend />
                                   <Bar
+                                    yAxisId="left"
                                     dataKey="avgResponseTime"
+                                    name="Avg Response Time (min)"
                                     fill="#82ca9d"
+                                  />
+                                  <Bar
+                                    yAxisId="right"
+                                    dataKey="messageCount"
+                                    name="Message Count"
+                                    fill="#8884d8"
                                   />
                                 </BarChart>
                               </ResponsiveContainer>
@@ -940,11 +951,21 @@ export default function Dashboard() {
                                 >
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis dataKey="hour" />
-                                  <YAxis />
+                                  <YAxis yAxisId="left" />
+                                  <YAxis yAxisId="right" orientation="right" />
                                   <Tooltip />
+                                  <Legend />
                                   <Bar
+                                    yAxisId="left"
                                     dataKey="avgResponseTime"
+                                    name="Avg Response Time (min)"
                                     fill="#82ca9d"
+                                  />
+                                  <Bar
+                                    yAxisId="right"
+                                    dataKey="messageCount"
+                                    name="Message Count"
+                                    fill="#8884d8"
                                   />
                                 </BarChart>
                               </ResponsiveContainer>
