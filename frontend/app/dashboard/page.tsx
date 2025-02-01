@@ -55,6 +55,9 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  AreaChart,
+  Area,
+  ComposedChart,
 } from "recharts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GitHubActivity } from "@/components/github-activity";
@@ -581,17 +584,19 @@ export default function Dashboard() {
                             {activityData?.messagesByDay &&
                             activityData.messagesByDay.length > 0 ? (
                               <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={activityData.messagesByDay}>
+                                <AreaChart data={activityData.messagesByDay}>
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis dataKey="date" />
                                   <YAxis />
                                   <Tooltip />
-                                  <Line
+                                  <Area
                                     type="monotone"
                                     dataKey="count"
                                     stroke="#8884d8"
+                                    fill="#8884d8"
+                                    fillOpacity={0.3}
                                   />
-                                </LineChart>
+                                </AreaChart>
                               </ResponsiveContainer>
                             ) : (
                               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -619,7 +624,11 @@ export default function Dashboard() {
                                   <XAxis dataKey="name" />
                                   <YAxis />
                                   <Tooltip />
-                                  <Bar dataKey="messages" fill="#8884d8" />
+                                  <Bar
+                                    dataKey="messages"
+                                    fill="#4f46e5"
+                                    name="Messages"
+                                  />
                                 </BarChart>
                               </ResponsiveContainer>
                             ) : (
@@ -688,7 +697,7 @@ export default function Dashboard() {
                             {activityData?.responseTimesByHour &&
                             activityData.responseTimesByHour.length > 0 ? (
                               <ResponsiveContainer width="100%" height="100%">
-                                <BarChart
+                                <ComposedChart
                                   data={activityData.responseTimesByHour}
                                 >
                                   <CartesianGrid strokeDasharray="3 3" />
@@ -697,19 +706,25 @@ export default function Dashboard() {
                                   <YAxis yAxisId="right" orientation="right" />
                                   <Tooltip />
                                   <Legend />
-                                  <Bar
+                                  <Area
                                     yAxisId="left"
+                                    type="monotone"
                                     dataKey="avgResponseTime"
                                     name="Avg Response Time (min)"
+                                    stroke="#82ca9d"
                                     fill="#82ca9d"
+                                    fillOpacity={0.3}
                                   />
-                                  <Bar
+                                  <Area
                                     yAxisId="right"
+                                    type="monotone"
                                     dataKey="messageCount"
                                     name="Message Count"
+                                    stroke="#8884d8"
                                     fill="#8884d8"
+                                    fillOpacity={0.3}
                                   />
-                                </BarChart>
+                                </ComposedChart>
                               </ResponsiveContainer>
                             ) : (
                               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -735,7 +750,11 @@ export default function Dashboard() {
                                   <XAxis dataKey="name" />
                                   <YAxis />
                                   <Tooltip />
-                                  <Bar dataKey="messages" fill="#ffc658" />
+                                  <Bar
+                                    dataKey="messages"
+                                    fill="#22c55e"
+                                    name="Messages"
+                                  />
                                 </BarChart>
                               </ResponsiveContainer>
                             ) : (
@@ -760,17 +779,19 @@ export default function Dashboard() {
                           {activityData?.dailyActiveHours &&
                           activityData.dailyActiveHours.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={activityData.dailyActiveHours}>
+                              <AreaChart data={activityData.dailyActiveHours}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis dataKey="date" />
                                 <YAxis />
                                 <Tooltip />
-                                <Line
+                                <Area
                                   type="monotone"
                                   dataKey="hours"
                                   stroke="#ff7300"
+                                  fill="#ff7300"
+                                  fillOpacity={0.3}
                                 />
-                              </LineChart>
+                              </AreaChart>
                             </ResponsiveContainer>
                           ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -831,17 +852,19 @@ export default function Dashboard() {
                             {activityData?.messagesByDay &&
                             activityData.messagesByDay.length > 0 ? (
                               <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={activityData.messagesByDay}>
+                                <AreaChart data={activityData.messagesByDay}>
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis dataKey="date" />
                                   <YAxis />
                                   <Tooltip />
-                                  <Line
+                                  <Area
                                     type="monotone"
                                     dataKey="count"
                                     stroke="#8884d8"
+                                    fill="#8884d8"
+                                    fillOpacity={0.3}
                                   />
-                                </LineChart>
+                                </AreaChart>
                               </ResponsiveContainer>
                             ) : (
                               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -869,7 +892,11 @@ export default function Dashboard() {
                                   <XAxis dataKey="name" />
                                   <YAxis />
                                   <Tooltip />
-                                  <Bar dataKey="messages" fill="#8884d8" />
+                                  <Bar
+                                    dataKey="messages"
+                                    fill="#4f46e5"
+                                    name="Messages"
+                                  />
                                 </BarChart>
                               </ResponsiveContainer>
                             ) : (
@@ -946,7 +973,7 @@ export default function Dashboard() {
                             {activityData?.responseTimesByHour &&
                             activityData.responseTimesByHour.length > 0 ? (
                               <ResponsiveContainer width="100%" height="100%">
-                                <BarChart
+                                <ComposedChart
                                   data={activityData.responseTimesByHour}
                                 >
                                   <CartesianGrid strokeDasharray="3 3" />
@@ -955,19 +982,25 @@ export default function Dashboard() {
                                   <YAxis yAxisId="right" orientation="right" />
                                   <Tooltip />
                                   <Legend />
-                                  <Bar
+                                  <Area
                                     yAxisId="left"
+                                    type="monotone"
                                     dataKey="avgResponseTime"
                                     name="Avg Response Time (min)"
+                                    stroke="#82ca9d"
                                     fill="#82ca9d"
+                                    fillOpacity={0.3}
                                   />
-                                  <Bar
+                                  <Area
                                     yAxisId="right"
+                                    type="monotone"
                                     dataKey="messageCount"
                                     name="Message Count"
+                                    stroke="#8884d8"
                                     fill="#8884d8"
+                                    fillOpacity={0.3}
                                   />
-                                </BarChart>
+                                </ComposedChart>
                               </ResponsiveContainer>
                             ) : (
                               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -993,7 +1026,11 @@ export default function Dashboard() {
                                   <XAxis dataKey="name" />
                                   <YAxis />
                                   <Tooltip />
-                                  <Bar dataKey="messages" fill="#ffc658" />
+                                  <Bar
+                                    dataKey="messages"
+                                    fill="#22c55e"
+                                    name="Messages"
+                                  />
                                 </BarChart>
                               </ResponsiveContainer>
                             ) : (
@@ -1024,17 +1061,19 @@ export default function Dashboard() {
                           {activityData?.dailyActiveHours &&
                           activityData.dailyActiveHours.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={activityData.dailyActiveHours}>
+                              <AreaChart data={activityData.dailyActiveHours}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis dataKey="date" />
                                 <YAxis />
                                 <Tooltip />
-                                <Line
+                                <Area
                                   type="monotone"
                                   dataKey="hours"
                                   stroke="#ff7300"
+                                  fill="#ff7300"
+                                  fillOpacity={0.3}
                                 />
-                              </LineChart>
+                              </AreaChart>
                             </ResponsiveContainer>
                           ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -1246,7 +1285,7 @@ export default function Dashboard() {
                                       width="100%"
                                       height="100%"
                                     >
-                                      <LineChart
+                                      <AreaChart
                                         data={Object.entries(
                                           calendarData.daily_meeting_counts
                                         ).map(([date, count]) => ({
@@ -1258,12 +1297,14 @@ export default function Dashboard() {
                                         <XAxis dataKey="date" />
                                         <YAxis />
                                         <Tooltip />
-                                        <Line
+                                        <Area
                                           type="monotone"
                                           dataKey="count"
                                           stroke="#8884d8"
+                                          fill="#8884d8"
+                                          fillOpacity={0.3}
                                         />
-                                      </LineChart>
+                                      </AreaChart>
                                     </ResponsiveContainer>
                                   ) : (
                                     <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -1642,7 +1683,7 @@ export default function Dashboard() {
                                     width="100%"
                                     height="100%"
                                   >
-                                    <LineChart
+                                    <AreaChart
                                       data={Object.entries(
                                         calendarData.daily_meeting_counts
                                       ).map(([date, count]) => ({
@@ -1654,12 +1695,14 @@ export default function Dashboard() {
                                       <XAxis dataKey="date" />
                                       <YAxis />
                                       <Tooltip />
-                                      <Line
+                                      <Area
                                         type="monotone"
                                         dataKey="count"
                                         stroke="#8884d8"
+                                        fill="#8884d8"
+                                        fillOpacity={0.3}
                                       />
-                                    </LineChart>
+                                    </AreaChart>
                                   </ResponsiveContainer>
                                 ) : (
                                   <div className="flex items-center justify-center h-full text-muted-foreground">

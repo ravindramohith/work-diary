@@ -1023,10 +1023,10 @@ async def get_slack_activity(
                     avg_time = (
                         sum(filtered_times) / len(filtered_times)
                         if filtered_times
-                        else 30
+                        else 0
                     )
                 else:
-                    avg_time = 30  # Default when no data available
+                    avg_time = 0  # Default when no data available
 
             avg_response_times.append(
                 {
