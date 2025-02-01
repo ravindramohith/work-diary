@@ -126,9 +126,13 @@ export function LoginForm({
           {isSignup ? "Create an account" : "Login to your account"}
         </h1>
         <p className="text-balance text-sm text-muted-foreground">
-          {isSignup
-            ? "Enter your details below to create your account"
-            : "Enter your email below to login to your account"}
+          {isSignup ? (
+            <>Enter your details below to create your account</>
+          ) : (
+            <>
+              Enter your <b>Slack</b> email below to login
+            </>
+          )}
         </p>
       </div>
       <div className="grid gap-6">
@@ -138,7 +142,7 @@ export function LoginForm({
             <Input
               id="name"
               type="text"
-              placeholder="John Doe"
+              placeholder="Name"
               value={formData.name}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, name: e.target.value }))
@@ -152,7 +156,7 @@ export function LoginForm({
           <Input
             id="email"
             type="email"
-            placeholder="m@example.com"
+            placeholder="name@org.com (Slack email)"
             required
             value={formData.email}
             onChange={(e) =>
@@ -164,14 +168,14 @@ export function LoginForm({
         <div className="grid gap-2">
           <div className="flex items-center">
             <Label htmlFor="password">Password</Label>
-            {!isSignup && (
+            {/* {!isSignup && (
               <a
                 href="#"
                 className="ml-auto text-sm underline-offset-4 hover:underline"
               >
                 Forgot your password?
               </a>
-            )}
+            )} */}
           </div>
           <Input
             id="password"

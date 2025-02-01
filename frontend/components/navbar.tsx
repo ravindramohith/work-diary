@@ -23,6 +23,7 @@ import {
   NotebookPen,
   Slack,
 } from "lucide-react";
+import Link from "next/link";
 
 interface NavbarProps {
   user: any;
@@ -47,10 +48,12 @@ export function Navbar({ user, currentPage = "dashboard" }: NavbarProps) {
           </Button>
         </SheetTrigger>
         <SheetContent side="left">
-          <div className="flex items-center gap-2 mb-6">
-            <NotebookPen className="h-6 w-6" />
-            <span className="font-semibold text-lg">Work Diary</span>
-          </div>
+          <Link href="/dashboard">
+            <div className="flex items-center gap-2 mb-6">
+              <NotebookPen className="h-6 w-6" />
+              <span className="font-semibold text-lg">Work Diary</span>
+            </div>
+          </Link>
           <div className="grid gap-2 py-6">
             <span className="flex w-full items-center py-2 text-lg font-semibold">
               {currentPage.charAt(0).toUpperCase() + currentPage.slice(1)}
