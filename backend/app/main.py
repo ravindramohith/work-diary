@@ -470,8 +470,26 @@ async def send_combined_nudge(
                 "issue_count": 0,
                 "comment_count": 0,
                 "active_repos": [],
+                "language_distribution": [],
+                "events_by_day": {},
             },
             "message": "No GitHub data available. Consider connecting your GitHub account for code activity insights!",
+        }
+
+        # Ensure GitHub analysis is included
+        github_data = (
+            analyses.github_analysis if analyses.github_analysis else github_placeholder
+        )
+
+        # Format the analyses for the prompt
+        formatted_analyses = {
+            "slack": analyses.slack_analysis,
+            "calendar": (
+                analyses.calendar_analysis
+                if analyses.calendar_analysis
+                else calendar_placeholder
+            ),
+            "github": github_data,
         }
 
         # Use OpenAI to generate a structured combined analysis
@@ -494,6 +512,8 @@ async def send_combined_nudge(
                     - Focus on time-based patterns (peak hours, quiet periods)
                     - Include communication style metrics (response times, thread engagement)
                     - Highlight collaboration patterns (team interactions, cross-channel activity)
+                    - Include sentiment analysis of communication
+                    - Include GitHub activity analysis if available
                     - If Calendar/GitHub is missing, provide more detailed Slack insights instead
                     - Each pattern should be data-rich with specific numbers and percentages""",
                 },
@@ -508,18 +528,21 @@ async def send_combined_nudge(
                             // Provide 3-6 of the most relevant patterns from below based on available data:
 
                             // Core Slack Patterns (Always include at least 2):
-                            "Communication Peak: [X%] of your Slack activity occurs between [specific time]-[specific time], with [Y] messages per hour during this period",
-                            "Message Distribution: [X] messages per day, with [Y%] in public channels and [Z%] in direct messages",
+                            "Communication Peak: [X%] of your Slack activity occurs around [specific time], with total of [Y] messages this period",
+                            "Message Distribution: [X] messages, with [Y%] in public channels and [Z%] in direct messages",
                             "Response Behavior: Average response time of [X] minutes, with [Y%] of responses within 5 minutes",
-                            "Thread Engagement: [X] thread participations with [Y] average replies, [Z%] leading to meaningful discussions",
+                            "Thread Engagement: [X] thread engagement with [Y] average replies, [Z%] leading to meaningful discussions",
+                            "Communication Sentiment: [X%] of your messages show [positive/neutral/negative] sentiment, with [Y] being the most common tone in [Z] channels",
 
                             // If Calendar is connected:
                             "Meeting Load: [X] meetings per week, averaging [Y] minutes each, with [Z%] during peak productivity hours",
                             "Meeting Patterns: [X%] of meetings are recurring, [Y%] are one-on-ones, with [Z] hours of focus time between meetings",
 
-                            // If GitHub is connected:
+                            // GitHub Patterns (Always include if GitHub data exists):
                             "Code Activity: [X] commits and [Y] PR reviews across [Z] repositories, with [W%] during core hours",
                             "Collaboration Style: [X] comments per PR, [Y] reviews requested, average review time of [Z] hours",
+                            "Language Distribution: Top [X] languages used: [List languages with percentages]",
+                            "Code Review Engagement: [X] reviews given, [Y] comments per review, average response time of [Z] hours",
 
                             // Additional Slack Insights (use if other services not connected):
                             "Channel Activity: Most active in [X] channels with [Y] messages per day in each",
@@ -552,13 +575,11 @@ async def send_combined_nudge(
                     }}
 
                     Analyses to consider:
-                    Slack Analysis: {analyses.slack_analysis}
-                    Calendar Analysis: {analyses.calendar_analysis if analyses.calendar_analysis else calendar_placeholder}
-                    GitHub Analysis: {analyses.github_analysis if analyses.github_analysis else github_placeholder}
+                    {formatted_analyses}
 
                     Important Notes:
                     1. ALWAYS include specific numbers, percentages, and times in every point
-                    2. If Calendar/GitHub data is missing, provide more detailed Slack insights instead
+                    2. If GitHub data is available (commit_count > 0), ALWAYS include at least one GitHub pattern
                     3. Focus on patterns that show both positive trends and areas for improvement
                     4. Include at least one collaboration metric in key patterns
                     5. All time references must use "X:XX AM/PM" format
@@ -567,10 +588,6 @@ async def send_combined_nudge(
                     8. Include specific time ranges and peak activity periods
                     9. Highlight team collaboration metrics from available data
                     10. Focus on actionable patterns that can influence work-life balance
-
-                    Make each point concise, actionable, and specific to the user's actual data.
-                    Focus on work-life balance, productivity, and well-being.
-                    Use emoji in the text where appropriate.
                     """,
                 },
             ],

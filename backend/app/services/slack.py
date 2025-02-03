@@ -55,7 +55,6 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection, days: int
 
         # Initialize thread metrics
         thread_stats = {
-            "total_threads": 0,
             "threads_initiated": 0,
             "thread_replies": 0,
             "avg_thread_length": 0,
@@ -98,7 +97,6 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection, days: int
                 # Initialize thread stats for this channel
                 if channel_name not in thread_stats["threads_by_channel"]:
                     thread_stats["threads_by_channel"][channel_name] = {
-                        "total_threads": 0,
                         "initiated_threads": 0,
                         "avg_thread_length": 0,
                         "deep_discussions": 0,
@@ -133,8 +131,12 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection, days: int
                             r for r in replies if r.get("user") == user["slack_user_id"]
                         ]
 
-                        thread_stats["total_threads"] += 1
-                        thread_stats["thread_depths"].append(thread_length)
+                        # Only add to thread_depths if user was engaged in the thread
+                        if (
+                            len(user_replies) > 0
+                            or msg.get("user") == user["slack_user_id"]
+                        ):
+                            thread_stats["thread_depths"].append(thread_length)
 
                         if thread_length > 5:
                             thread_stats["long_threads"] += 1
@@ -204,16 +206,16 @@ async def analyze_slack_activity(user_id: int, db: asyncpg.Connection, days: int
                 continue
 
         # Calculate thread averages
-        if thread_stats["total_threads"] > 0:
+        if thread_stats["thread_depths"]:
             thread_stats["avg_thread_length"] = sum(
                 thread_stats["thread_depths"]
             ) / len(thread_stats["thread_depths"])
             for channel in thread_stats["threads_by_channel"]:
                 channel_threads = thread_stats["threads_by_channel"][channel]
-                if channel_threads["total_threads"] > 0:
+                if channel_threads["initiated_threads"] > 0:
                     channel_threads["avg_thread_length"] = (
                         sum(d for d in thread_stats["thread_depths"] if d > 0)
-                        / channel_threads["total_threads"]
+                        / channel_threads["initiated_threads"]
                     )
 
         # Calculate average response time
