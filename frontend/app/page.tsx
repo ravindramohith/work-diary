@@ -46,7 +46,7 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
       <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm">
-        <h1 className="text-4xl font-bold text-center mb-8">Balance IQ</h1>
+        <h1 className="text-4xl font-bold text-center mb-8">Work Diary</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
           <Card className="p-6">
@@ -82,9 +82,9 @@ export default function Home() {
           </Card>
 
           <Card className="p-6">
-            <h2 className="text-2xl font-semibold mb-4">About Balance IQ</h2>
+            <h2 className="text-2xl font-semibold mb-4">About Work Diary</h2>
             <p className="text-gray-600 dark:text-gray-300">
-              Balance IQ helps you maintain a healthy work-life balance by
+              Work Diary helps you maintain a healthy work-life balance by
               analyzing your:
             </p>
             <ul className="list-disc list-inside mt-4 space-y-2 text-gray-600 dark:text-gray-300">

@@ -23,6 +23,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  AreaChart,
+  Area,
 } from "recharts";
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
@@ -169,13 +171,20 @@ export function CalendarActivity({ data, isLoading }: CalendarActivityProps) {
         <CardContent className="h-[300px]">
           {weeklyPatterns.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={weeklyPatterns}>
+              <AreaChart data={weeklyPatterns}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="meetings" fill="#82ca9d" name="Meetings" />
-              </BarChart>
+                <Area 
+                  type="monotone"
+                  dataKey="meetings"
+                  stroke="#06b6d4"
+                  fill="#06b6d4"
+                  fillOpacity={0.3}
+                  name="Meetings"
+                />
+              </AreaChart>
             </ResponsiveContainer>
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
